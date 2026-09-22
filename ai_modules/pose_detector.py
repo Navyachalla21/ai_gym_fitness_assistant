@@ -64,6 +64,9 @@ def run_pose_detection():
     cap = cv2.VideoCapture(0)
     start_time = time.time()
 
+    cv2.namedWindow('AI Gym Trainer - Bicep Curl Counter', cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty('AI Gym Trainer - Bicep Curl Counter', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
     with PoseLandmarker.create_from_options(options) as landmarker:
         while cap.isOpened():
             ret, frame = cap.read()
