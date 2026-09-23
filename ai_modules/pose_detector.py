@@ -1,3 +1,5 @@
+import winsound
+import requests
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -30,22 +32,32 @@ def calculate_angle(a, b, c):
 
     return angle
 
+def check_elbow_drift(shoulder, elbow, w):
+    """Returns True if elbow has drifted too far from torso (common curl mistake)."""
+    horizontal_distance = abs(elbow[0] - shoulder[0]) * w
+    return horizontal_distance > 60  # pixels — adjust based on testing
+
 
 class BicepCurlCounter:
-    """Tracks bicep curl reps using elbow angle transitions."""
     def __init__(self):
         self.counter = 0
         self.stage = None
         self.feedback = "Get ready"
 
-    def update(self, elbow_angle):
+    def update(self, elbow_angle, elbow_drifted):
+        if elbow_drifted:
+            self.feedback = "Keep elbow tucked in!"
+            return self.counter, self.stage, self.feedback, True  # True = warning
+
         if elbow_angle > 160:
             self.stage = "down"
         if elbow_angle < 50 and self.stage == "down":
             self.stage = "up"
             self.counter += 1
             self.feedback = "Good rep!"
-        return self.counter, self.stage, self.feedback
+            return self.counter, self.stage, self.feedback, False
+
+        return self.counter, self.stage, self.feedback, False
 
 
 def run_pose_detection():
@@ -63,6 +75,7 @@ def run_pose_detection():
     rep_counter = BicepCurlCounter()
     cap = cv2.VideoCapture(0)
     start_time = time.time()
+    feedback_log = []
 
     cv2.namedWindow('AI Gym Trainer - Bicep Curl Counter', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('AI Gym Trainer - Bicep Curl Counter', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
@@ -90,8 +103,15 @@ def run_pose_detection():
                 wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
 
                 angle = calculate_angle(shoulder, elbow, wrist)
-                count, stage, feedback = rep_counter.update(angle)
+                drifted = check_elbow_drift(shoulder, elbow, w)
+                count, stage, feedback, is_warning = rep_counter.update(angle, drifted)
+                feedback_log.append(feedback)
 
+                if is_warning:
+                    winsound.Beep(400, 150)
+                elif feedback == "Good rep!":
+                    winsound.Beep(1000, 100)
+    
                 elbow_px = (int(elbow[0] * w), int(elbow[1] * h))
                 cv2.putText(image, str(int(angle)), elbow_px,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
@@ -120,6 +140,25 @@ def run_pose_detection():
     cap.release()
     cv2.destroyAllWindows()
 
+    session_duration = int(time.time() - start_time)
+
+    print(f"\nSession complete — Reps: {rep_counter.counter}, Duration: {session_duration}s")
+
+    try:
+        response = requests.post("http://localhost:8000/api/analyze-session", json={
+            "reps": rep_counter.counter,
+            "duration_seconds": session_duration,
+            "form_feedback_list": feedback_log
+        })
+        if response.status_code == 200:
+            result = response.json()
+            print(f"Performance Score: {result['performance_score']}")
+            print(f"Form Quality: {result['form_quality_pct']}%")
+            print(f"Rating: {result['rating']}")
+        else:
+            print(f"Backend error: {response.text}")
+    except requests.exceptions.ConnectionError:
+        print("Could not reach backend — make sure uvicorn is running on port 8000.")
 
 if __name__ == "__main__":
     run_pose_detection()
