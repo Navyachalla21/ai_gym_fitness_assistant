@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-API_URL = "http://localhost:8000"
+API_URL = "https://ai-gym-backend-bwiz.onrender.com"
 
 st.set_page_config(page_title="AI Gym & Fitness Assistant", page_icon="🏋️", layout="wide")
 st.title("🏋️ AI Gym & Fitness Assistant — Dashboard")
