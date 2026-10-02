@@ -16,7 +16,9 @@ export default function DietCoach() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/api/diet-plan", {
+     const baseUrl2 = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 'http://localhost:8000';
+     const res = await fetch(`${baseUrl2}/api/diet-coach`, {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

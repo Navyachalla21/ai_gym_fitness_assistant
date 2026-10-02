@@ -19,7 +19,9 @@ export default function SessionPerformance() {
       ...Array(Math.max(totalCount - goodCount, 0)).fill("Adjust form"),
     ];
     try {
-      const res = await fetch("http://localhost:8000/api/analyze-session", {
+      const baseUrl15 = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl15}/api/analyze-session`, {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reps, duration_seconds: duration, form_feedback_list: feedbackList }),

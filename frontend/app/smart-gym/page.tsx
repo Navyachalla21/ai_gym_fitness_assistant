@@ -11,8 +11,12 @@ export default function SmartGym() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/api/smart-gym-reading");
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+     const baseUrl116 = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 'http://localhost:8000';
+     const res = await fetch(`${baseUrl116}/api/smart-gym`);
+
+
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
       setResult(await res.json());
     } catch (err: any) {
       setError(err.message || "Something went wrong");

@@ -16,7 +16,9 @@ export default function GymBuddy() {
     setInput("");
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/gym-buddy-chat", {
+      const baseUrl3 = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl3}/api/gym-buddy-chat`, {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMsg }),

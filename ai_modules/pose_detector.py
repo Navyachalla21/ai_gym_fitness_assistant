@@ -1,22 +1,27 @@
-import winsound
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
 import requests
 import cv2
 import mediapipe as mp
 import numpy as np
 import time
+import os
 
 BaseOptions = mp.tasks.BaseOptions
 PoseLandmarker = mp.tasks.vision.PoseLandmarker
 PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-MODEL_PATH = "ai_modules/pose_landmarker_lite.task"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "pose_landmarker_lite.task")
 
 # Standard 33-point BlazePose landmark indices
 RIGHT_SHOULDER = 12
 RIGHT_ELBOW = 14
 RIGHT_WRIST = 16
-
 
 def calculate_angle(a, b, c):
     """Calculates the angle at point 'b', formed by points a-b-c."""
@@ -37,7 +42,6 @@ def check_elbow_drift(shoulder, elbow, w):
     horizontal_distance = abs(elbow[0] - shoulder[0]) * w
     return horizontal_distance > 60  # pixels — adjust based on testing
 
-
 class BicepCurlCounter:
     def __init__(self):
         self.counter = 0
@@ -51,14 +55,17 @@ class BicepCurlCounter:
 
         if elbow_angle > 160:
             self.stage = "down"
+            self.feedback = "Clear extension. Curl up."
         if elbow_angle < 50 and self.stage == "down":
             self.stage = "up"
             self.counter += 1
             self.feedback = "Good rep!"
             return self.counter, self.stage, self.feedback, False
 
-        return self.counter, self.stage, self.feedback, False
+        if self.stage == "up" and elbow_angle > 70:
+            self.feedback = "Lower down smoothly."
 
+        return self.counter, self.stage, self.feedback, False
 
 def run_pose_detection():
     """
@@ -76,6 +83,10 @@ def run_pose_detection():
     cap = cv2.VideoCapture(0)
     start_time = time.time()
     feedback_log = []
+    
+    # State tracking metrics to fix the frame-logging repetition flaw
+    last_count = 0
+    warning_active = False
 
     cv2.namedWindow('AI Gym Trainer - Bicep Curl Counter', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('AI Gym Trainer - Bicep Curl Counter', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
@@ -105,13 +116,25 @@ def run_pose_detection():
                 angle = calculate_angle(shoulder, elbow, wrist)
                 drifted = check_elbow_drift(shoulder, elbow, w)
                 count, stage, feedback, is_warning = rep_counter.update(angle, drifted)
-                feedback_log.append(feedback)
+
+                # --- FIX: State Change Logging Logic (Prevents logging every frame) ---
+                if count > last_count:
+                    feedback_log.append("Good rep!")
+                    last_count = count
+                    warning_active = False  # Reset warning threshold tracking state
+                elif is_warning and not warning_active:
+                    feedback_log.append("Keep elbow tucked in!")
+                    warning_active = True
+                elif not is_warning and warning_active:
+                    warning_active = False  # Form corrected cleanly
 
                 if is_warning:
-                    winsound.Beep(400, 150)
-                elif feedback == "Good rep!":
-                    winsound.Beep(1000, 100)
-    
+                    if winsound:
+                        winsound.Beep(400, 150)
+                elif feedback == "Good rep!":        
+                    if winsound:
+                        winsound.Beep(1000, 100)
+
                 elbow_px = (int(elbow[0] * w), int(elbow[1] * h))
                 cv2.putText(image, str(int(angle)), elbow_px,
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
@@ -141,20 +164,20 @@ def run_pose_detection():
     cv2.destroyAllWindows()
 
     session_duration = int(time.time() - start_time)
-
     print(f"\nSession complete — Reps: {rep_counter.counter}, Duration: {session_duration}s")
 
     try:
-        response = requests.post("http://localhost:8000/api/analyze-session", json={
+        backend_url = os.getenv("BACKEND_API_URL", "http://localhost:8000")
+        response = requests.post(f"{backend_url}/api/analyze-session", json={
             "reps": rep_counter.counter,
             "duration_seconds": session_duration,
             "form_feedback_list": feedback_log
         })
         if response.status_code == 200:
             result = response.json()
-            print(f"Performance Score: {result['performance_score']}")
-            print(f"Form Quality: {result['form_quality_pct']}%")
-            print(f"Rating: {result['rating']}")
+            print(f"Performance Score: {result.get('performance_score', 'N/A')}")
+            print(f"Form Quality: {result.get('form_quality_pct', 'N/A')}%")
+            print(f"Rating: {result.get('rating', 'N/A')}")
         else:
             print(f"Backend error: {response.text}")
     except requests.exceptions.ConnectionError:
@@ -162,3 +185,4 @@ def run_pose_detection():
 
 if __name__ == "__main__":
     run_pose_detection()
+

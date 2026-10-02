@@ -13,7 +13,9 @@ export default function Recommendations() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:8000/api/recommend", {
+      const baseUrl4 = (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) || 'http://localhost:8000';
+      const res = await fetch(`${baseUrl4}/api/recommendations`, {
+
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ goal, current_streak_days: streak }),

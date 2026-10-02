@@ -7,8 +7,13 @@ An AI-powered fitness ecosystem that unifies workout detection, diet planning, b
 - **Dashboard (Streamlit):** https://aigymfitnessassistant-sqktqokhufhzdfac6pdefs.streamlit.app
 - **Backend API (Render):** https://ai-gym-backend-bwiz.onrender.com
 - **API Docs (Swagger):** https://ai-gym-backend-bwiz.onrender.com/docs
+- **GitHub Repository(Source code)**  https://github.com/Navyachalla21/ai_gym_fitness_assistant
 
 > Note: The backend runs on Render's free tier, which spins down after periods of inactivity. The first request after idle time may take 30–50 seconds to respond while the server wakes up.
+
+## 🏗️ Architecture
+
+![Architecture Diagram](architecture_diagram.png)
 
 ## 📖 Project Overview
 
