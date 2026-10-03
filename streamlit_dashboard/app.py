@@ -1,12 +1,14 @@
+import os
 import streamlit as st
 import requests
+from admin_analytics import render_admin_analytics
 
-API_URL = "https://ai-gym-backend-bwiz.onrender.com"
+API_URL = os.getenv("API_URL", "https://ai-gym-backend-bwiz.onrender.com")
 
 st.set_page_config(page_title="AI Gym & Fitness Assistant", page_icon="🏋️", layout="wide")
 st.title("🏋️ AI Gym & Fitness Assistant — Dashboard")
 
-tabs = st.tabs(["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym", "🎯 Recommendations", "📈 Session Performance"])
+tabs = st.tabs(["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym", "🎯 Recommendations", "📈 Session Performance", "🛠️ Admin Analytics"])
 
 # --- Diet Coach ---
 with tabs[0]:
@@ -48,6 +50,16 @@ with tabs[1]:
             col1.metric("Skip Risk", data["risk_level"], f"{data['skip_probability']*100:.0f}%")
             if data["nudge"]:
                 col2.info(data["nudge"])
+            sched = data.get("suggested_schedule")
+            if sched:
+                st.markdown("**Adjusted schedule**")
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Intensity", sched["intensity"])
+                s2.metric("Session length", f"{sched['session_length_min']} min")
+                s3.metric("Target / week", sched["sessions_per_week_target"])
+                for step in sched["plan"]:
+                    st.write(f"- {step}")
+                st.caption(sched["reminder"])
         else:
             st.error(f"Error: {res.text}")
 
@@ -124,6 +136,6 @@ with tabs[5]:
             col2.metric("Form Quality", f"{data['form_quality_pct']}%")
             col3.metric("Rating", data["rating"])
 
-
-
-
+# --- Admin Analytics ---
+with tabs[6]:
+    render_admin_analytics(API_URL)

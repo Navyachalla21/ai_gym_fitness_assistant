@@ -7,3 +7,4 @@ node_modules/
 frontend/.next/
 frontend/node_modules/
 *.task
+gym_data.db

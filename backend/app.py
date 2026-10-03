@@ -14,6 +14,9 @@ from ai_modules.gym_recommender import recommend_programs, recommend_nearby_gyms
 from ai_modules.smart_gym_assistant import simulate_sensor_reading, recommend_adjustment
 
 app = FastAPI(title="AI Gym & Fitness Assistant API")
+from analytics_routes import router as analytics_router
+app.include_router(analytics_router)
+
 
 # Allow the frontend (running on a different port) to call this API
 app.add_middleware(
