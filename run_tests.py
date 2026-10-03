@@ -72,8 +72,9 @@ def t_risk_low():
 
 
 def t_risk_mid():
-    d = risk(3, 3, 70)  # informational: records what the model returns for a middle profile
-    return d["risk_level"] in ("Low", "Medium", "High"), f"{d['risk_level']} ({d['skip_probability']:.0%})"
+    d = risk(5, 3, 60)
+    s = d.get("suggested_schedule") or {}
+    return d["risk_level"] == "Medium", f"{d['risk_level']} ({d['skip_probability']:.0%}); schedule: {s.get('intensity')}, {s.get('session_length_min')} min"
 
 
 def buddy(msg):
@@ -133,12 +134,55 @@ def t_validation():
     return r.status_code == 422, f"HTTP {r.status_code} for empty body"
 
 
+def t_recommend_plus():
+    d = call("POST", "/api/recommend-plus", json={"goal": "muscle gain", "current_streak_days": 0, "city": "Bengaluru"}).json()
+    g = d["nearby_gyms"][0]
+    return (d["fitness_level"] in ("beginner", "intermediate", "advanced") and g.get("city") == "Bengaluru"
+            and d["location_used"] == "Bengaluru" and len(d["programs"]) >= 1), \
+        f"level {d['fitness_level']} ({d['fitness_level_reason']}); nearest {g['name']} {g['distance_km']} km"
+
+
+def t_recommend_validation():
+    r = call("POST", "/api/recommend-plus", json={"goal": "weight loss", "latitude": 95, "longitude": 10})
+    return r.status_code == 422, f"HTTP {r.status_code} for latitude 95"
+
+
+def t_calorie_target():
+    d = call("GET", "/api/calorie-target", params={"weight_kg": 70, "height_cm": 170, "goal": "weight loss"}).json()
+    return 1500 <= d["target_calories"] <= 1900, f"target {d['target_calories']} kcal (maintenance {d['maintenance_calories']})"
+
+
+def t_meals():
+    uid = "test-runner"
+    r = call("POST", "/api/meals", json={"meal_name": "Test oats", "calories": 300, "protein_g": 10, "user_id": uid})
+    meal_id = r.json()["id"]
+    s = call("GET", "/api/meals/summary", params={"user_id": uid, "target_calories": 1700}).json()
+    logged = s["today"]["calories"] >= 300 and any(m["id"] == meal_id for m in s["today"]["meals"])
+    deleted = call("DELETE", f"/api/meals/{meal_id}", params={"user_id": uid}).status_code == 200
+    return (r.status_code == 200 and logged and deleted), \
+        f"logged -> today {s['today']['calories']} kcal, {s['today']['remaining']} remaining; then deleted"
+
+
+def t_meal_validation():
+    r = call("POST", "/api/meals", json={"meal_name": "", "calories": 100})
+    return r.status_code == 422, f"HTTP {r.status_code} for empty meal name"
+
+
+def t_smart_live():
+    d = call("GET", "/api/smart-gym-live").json()
+    a = d["analysis"]
+    return (d["source"] in ("mqtt", "simulated") and "recommended_resistance" in a and a["recommended_rest_seconds"] > 0), \
+        (f"source={d['source']}, HR {d['reading']['heart_rate_bpm']} -> {a['intensity_action']}, "
+         f"resistance {a['current_resistance']} -> {a['recommended_resistance']}, rest {a['recommended_rest_seconds']}s, "
+         f"broker connected={d['mqtt']['connected']}")
+
+
 record("Backend API", "Root endpoint availability", "GET /", "200 OK", t_root)
 record("AI Dietician", "BMI + plan (normal BMI)", "70 kg, 170 cm, weight loss, vegetarian", "BMI 24.2 Normal weight, plan returned", t_diet)
 record("AI Dietician", "BMI category (underweight)", "50 kg, 170 cm, muscle gain", "BMI 17.3 Underweight", t_diet_underweight)
 record("Habit Tracker", "High-risk profile", "13 days, 1.28/wk, 77%", "High risk + light 15-min schedule", t_risk_high)
 record("Habit Tracker", "Low-risk profile (contrast)", "1 day, 6/wk, 95%", "Low risk, no nudge", t_risk_low)
-record("Habit Tracker", "Middle profile (informational)", "3 days, 3/wk, 70%", "Valid risk level returned", t_risk_mid)
+record("Habit Tracker", "Medium-risk profile", "5 days, 3/wk, 60%", "Medium risk + moderate schedule", t_risk_mid)
 record("Gym Buddy", "Negative message", "I feel tired and stressed today", "sentiment negative + reply", t_buddy("I feel tired and stressed today", "negative"))
 record("Gym Buddy", "Positive message", "I feel great and motivated!", "sentiment positive + reply", t_buddy("I feel great and motivated!", "positive"))
 record("Gym Buddy", "Negation handling", "I am not happy with my progress", "sentiment negative", t_buddy("I am not happy with my progress", "negative"))
@@ -149,6 +193,12 @@ record("Gym Recommender", "Beginner streak", "weight loss, streak 0", "3-Day Kic
 record("Gym Recommender", "Advanced streak", "muscle gain, streak 20", "30-Day Mastery Challenge", t_recommend("muscle gain", 20, "30-Day"))
 record("Weekly Report", "Report from saved sessions", "GET /api/weekly-report", "200 + report fields", t_weekly)
 record("Admin Analytics", "Summary endpoint", "GET /api/analytics/summary", "200 + totals", t_summary)
+record("Gym Recommender", "Location + history aware", "muscle gain, city Bengaluru", "Level, programs, nearest gyms", t_recommend_plus)
+record("Gym Recommender", "Input validation", "latitude 95", "422 validation error", t_recommend_validation)
+record("AI Dietician", "Calorie target estimate", "70 kg, 170 cm, weight loss", "About 1,500-1,900 kcal", t_calorie_target)
+record("AI Dietician", "Meal logging + intake summary", "log, summarise, delete a meal", "Saved, counted, removable", t_meals)
+record("AI Dietician", "Meal validation", "empty meal name", "422 validation error", t_meal_validation)
+record("Smart Gym", "Live MQTT / fallback + resistance advice", "GET /api/smart-gym-live", "Source shown, resistance + rest advice", t_smart_live)
 record("Backend API", "Input validation", "POST /api/diet-plan with {}", "422 validation error", t_validation)
 
 # ----------------------------------------------------------------- output
