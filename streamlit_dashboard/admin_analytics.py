@@ -68,12 +68,27 @@ def render_admin_analytics(api_url: str):
         w2.metric("Avg form quality", f"{weekly['average_form_quality_pct']}%")
         w3.metric("Trend", weekly["trend"])
         daily = pd.DataFrame(weekly["daily_breakdown"])
-        fig = px.bar(daily, x="date", y="avg_score", text="sessions",
-                     labels={"avg_score": "Avg score", "date": "Date", "sessions": "Sessions"})
-        fig.update_traces(texttemplate="%{text} session(s)", textposition="outside")
-        st.plotly_chart(fig, use_container_width=True)
+        fig = px.line(daily, x="date", y="avg_score", markers=True, hover_data=["sessions"],
+                      labels={"avg_score": "Avg score", "date": "Date", "sessions": "Sessions"})
+        fig.update_layout(title="Average score per day (last 7 days)")
+        st.plotly_chart(fig, width="stretch")
     else:
         st.write(weekly.get("message", "No sessions in the last 7 days."))
+
+    # ---- sessions per week
+    st.markdown("#### Sessions per week")
+    if sessions:
+        wdf = pd.DataFrame(sessions)
+        wdf["week"] = pd.to_datetime(wdf["created_at"]).dt.tz_localize(None).dt.to_period("W").dt.start_time
+        per_week = wdf.groupby("week").size().reset_index(name="sessions")
+        per_week["week"] = per_week["week"].dt.strftime("%d %b")   # e.g. "14 Sep"
+        fig = px.bar(per_week, x="week", y="sessions", text="sessions",
+                     labels={"week": "Week starting", "sessions": "Sessions"})
+        fig.update_xaxes(type="category")
+        fig.update_yaxes(dtick=1)
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.write("No sessions yet.")
 
     left, right = st.columns(2)
 
@@ -85,7 +100,7 @@ def render_admin_analytics(api_url: str):
             df["created_at"] = pd.to_datetime(df["created_at"])
             fig = px.line(df, x="created_at", y="performance_score", markers=True,
                           labels={"created_at": "Date", "performance_score": "Score"})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.write("No sessions yet.")
 
@@ -95,7 +110,7 @@ def render_admin_analytics(api_url: str):
         if sessions:
             fig = px.area(df, x="created_at", y="form_quality_pct",
                           labels={"created_at": "Date", "form_quality_pct": "Form quality %"})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.write("No sessions yet.")
 
@@ -108,7 +123,7 @@ def render_admin_analytics(api_url: str):
         if dist:
             order = [lvl for lvl in ("Low", "Medium", "High") if lvl in dist]
             fig = px.bar(x=order, y=[dist[o] for o in order], labels={"x": "Risk level", "y": "Checks"})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.write("No risk checks yet.")
 
@@ -121,14 +136,14 @@ def render_admin_analytics(api_url: str):
             fig = px.line(mdf, x="time", y="score", markers=True,
                           labels={"time": "Time", "score": "Mood (-1 negative … +1 positive)"})
             fig.update_yaxes(range=[-1.2, 1.2], dtick=1)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         else:
             st.write("No chat messages yet.")
 
     with st.expander("Raw data"):
         if sessions:
             st.write("Sessions")
-            st.dataframe(pd.DataFrame(sessions), use_container_width=True)
+            st.dataframe(pd.DataFrame(sessions), width="stretch")
         if risks:
             st.write("Risk checks")
-            st.dataframe(pd.DataFrame(risks), use_container_width=True)
+            st.dataframe(pd.DataFrame(risks), width="stretch")

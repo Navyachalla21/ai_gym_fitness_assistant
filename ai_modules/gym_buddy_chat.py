@@ -31,6 +31,14 @@ _NEGATORS = {"not", "no", "never", "hardly", "cant", "cannot", "wont", "dont", "
 _FILLERS = {"feel", "feeling", "felt", "very", "so", "really", "too", "that", "quite", "been", "being",
             "all", "at", "particularly", "especially", "even"}
 
+# Multi-word phrases that signal low motivation even though they contain no mood word.
+_NEGATIVE_PHRASES = (
+    "dont have mood", "dont have the mood", "dont have any mood", "not in the mood", "no mood",
+    "no motivation", "dont have motivation", "no energy", "dont have energy", "cant be bothered",
+    "dont feel like working", "dont feel like training", "dont feel like exercising",
+    "dont feel like going", "dont feel like it", "dont feel motivated", "not feeling motivated",
+)
+
 _HISTORY_TURNS = 5  # how many previous messages the buddy remembers
 
 
@@ -39,6 +47,8 @@ def detect_sentiment(message: str) -> str:
     # strip apostrophes so "don't" -> "dont", then split into plain words
     words = re.findall(r"[a-z]+", message.lower().replace("'", "").replace("’", ""))
     pos = neg = 0
+    text = " ".join(words)
+    neg += sum(1 for phrase in _NEGATIVE_PHRASES if phrase in text)
     for i, word in enumerate(words):
         if word not in _POSITIVE_WORDS and word not in _NEGATIVE_WORDS:
             continue
@@ -61,7 +71,9 @@ buddy_prompt = PromptTemplate(
     template="""You are a friendly, motivating AI Gym Buddy — supportive like a workout partner,
 not clinical. The user's detected mood is: {sentiment}.
 
-If mood is negative: be encouraging and empathetic, suggest a small achievable step.
+If mood is negative: acknowledge the feeling in one sentence, then suggest ONE tiny optional step
+(2-5 minutes: a short walk, light stretching, a few easy reps). A rest day is fine, but never tell
+the user to drop their fitness goals or "let it all go" - keep the door open for tomorrow.
 If mood is positive: match their energy and reinforce the momentum.
 If mood is neutral: be warm and ask an engaging follow-up about their fitness goals.
 

@@ -15,6 +15,7 @@ import os
 import random
 import sqlite3
 import tempfile
+import threading
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
@@ -51,6 +52,15 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     message TEXT NOT NULL,
     sentiment TEXT               -- only set for user messages
 );
+CREATE TABLE IF NOT EXISTS meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT NOT NULL,
+    meal_name TEXT NOT NULL,
+    calories REAL NOT NULL,
+    protein_g REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_meals_user_time ON meals(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON sessions(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_risk_user_time ON risk_checks(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_user_time ON chat_messages(user_id, created_at);
@@ -122,6 +132,33 @@ def log_chat(role: str, message: str, sentiment: str | None = None,
     )
 
 
+def log_meal(meal_name: str, calories: float, protein_g: float = 0, user_id: str = "default",
+             created_at: str | None = None) -> int | None:
+    """Saves one eaten meal and returns its id (None if saving failed)."""
+    try:
+        with closing(_connect()) as conn:
+            cur = conn.execute(
+                "INSERT INTO meals (user_id, created_at, meal_name, calories, protein_g) VALUES (?,?,?,?,?)",
+                (user_id, created_at or _now(), meal_name, calories, protein_g))
+            conn.commit()
+            return cur.lastrowid
+    except Exception as exc:  # noqa: BLE001
+        print(f"[storage] meal write failed: {exc}")
+        return None
+
+
+def delete_meal(meal_id: int, user_id: str = "default") -> bool:
+    """Deletes one meal (only if it belongs to this user)."""
+    try:
+        with closing(_connect()) as conn:
+            cur = conn.execute("DELETE FROM meals WHERE id = ? AND user_id = ?", (meal_id, user_id))
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception as exc:  # noqa: BLE001
+        print(f"[storage] meal delete failed: {exc}")
+        return False
+
+
 # ----------------------------------------------------------------- reads
 def _fetch(table: str, user_id: str, days: int | None, limit: int | None) -> list:
     """Return rows oldest-first. `limit` keeps the most recent N rows."""
@@ -156,11 +193,15 @@ def get_chats(user_id: str = "default", days: int | None = None, limit: int | No
     return _fetch("chat_messages", user_id, days, limit)
 
 
+def get_meals(user_id: str = "default", days: int | None = None, limit: int | None = None) -> list:
+    return _fetch("meals", user_id, days, limit)
+
+
 def list_users() -> list:
     try:
         with closing(_connect()) as conn:
             q = ("SELECT user_id FROM sessions UNION SELECT user_id FROM risk_checks "
-                 "UNION SELECT user_id FROM chat_messages ORDER BY user_id")
+                 "UNION SELECT user_id FROM chat_messages UNION SELECT user_id FROM meals ORDER BY user_id")
             return [r[0] for r in conn.execute(q).fetchall()]
     except Exception as exc:  # noqa: BLE001
         print(f"[storage] list_users failed: {exc}")
@@ -168,7 +209,15 @@ def list_users() -> list:
 
 
 # ------------------------------------------------------------ demo data
+_seed_lock = threading.Lock()   # one seeding run at a time (double-clicks must not interleave)
+
+
 def seed_demo_data(user_id: str = "demo", days: int = 14) -> dict:
+    with _seed_lock:
+        return _seed_demo_data(user_id, days)
+
+
+def _seed_demo_data(user_id: str, days: int) -> dict:
     """Fill the database with clearly-labelled DEMO history (stored under user_id 'demo')
     so the analytics dashboard can be shown even when the real history is empty.
     Re-running replaces the previous demo rows."""

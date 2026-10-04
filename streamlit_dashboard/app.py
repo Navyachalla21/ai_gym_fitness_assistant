@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import requests
 from admin_analytics import render_admin_analytics
+from nutrition_ui import render_nutrition_tracker
 
 API_URL = os.getenv("API_URL", "https://ai-gym-backend-bwiz.onrender.com")
 
@@ -30,6 +31,8 @@ with tabs[0]:
                 st.markdown(data["plan"])
             else:
                 st.error(f"Error: {res.text}")
+
+    render_nutrition_tracker(API_URL, weight, height, goal)
 
 # --- Behavior Risk ---
 with tabs[1]:
@@ -85,8 +88,53 @@ with tabs[2]:
 
 # --- Smart Gym ---
 with tabs[3]:
-    st.subheader("Smart Gym Assistant (Simulated IoT)")
-    st.caption("Simulated sensor data — demonstrates the AI+IoT integration layer described in the project brief.")
+    st.subheader("Smart Gym Assistant (AI + IoT)")
+    st.caption("Equipment publishes sensor data over MQTT; the backend reads it, recommends a resistance "
+               "and rest time, and can send the new resistance back to the machine.")
+
+    st.markdown("#### Live equipment (MQTT)")
+    st.caption("To see real MQTT data, run `python ai_modules/iot_simulator.py` on your computer. "
+               "With no machine publishing, the reading below is simulated and labelled as such.")
+
+    if st.button("Get live reading"):
+        try:
+            res = requests.get(f"{API_URL}/api/smart-gym-live", timeout=60)
+            res.raise_for_status()
+            st.session_state["live_gym"] = res.json()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not get a reading: {exc}")
+
+    live = st.session_state.get("live_gym")
+    if live:
+        if live["source"] == "mqtt":
+            st.success("Source: real MQTT telemetry from the equipment")
+        else:
+            st.warning("Source: simulated reading (no equipment is publishing right now)")
+        r, an = live["reading"], live["analysis"]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Heart Rate", f"{r['heart_rate_bpm']} bpm", an["heart_rate_zone"] + " zone", delta_color="off")
+        col2.metric("Resistance Level", r["resistance_level"])
+        col3.metric("Equipment Status", r["equipment_status"])
+        st.info(an["advice"])
+        col4, col5 = st.columns(2)
+        col4.metric("Recommended resistance", an["recommended_resistance"],
+                    f"{an['recommended_resistance'] - an['current_resistance']:+d}", delta_color="off")
+        col5.metric("Recommended rest", f"{an['recommended_rest_seconds']} s")
+
+        if live["source"] == "mqtt" and an["recommended_resistance"] != an["current_resistance"]:
+            if st.button("Apply recommended resistance to the machine"):
+                try:
+                    res = requests.post(f"{API_URL}/api/smart-gym-live/apply", timeout=60,
+                                        json={"resistance_level": an["recommended_resistance"]})
+                    res.raise_for_status()
+                    st.success("Command sent. Get another reading in a few seconds to see the change.")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not send the command: {exc}")
+        with st.expander("Connection details"):
+            st.json(live["mqtt"])
+
+    st.divider()
+    st.markdown("#### Quick simulated reading")
     if st.button("Get Live Sensor Reading"):
         res = requests.get(f"{API_URL}/api/smart-gym-reading")
         if res.status_code == 200:
@@ -102,18 +150,43 @@ with tabs[4]:
     st.subheader("Gym Recommender & Planner")
     rec_goal = st.selectbox("Your goal", ["weight loss", "muscle gain", "endurance", "general fitness"], key="rec_goal")
     streak = st.number_input("Current streak (days)", min_value=0, value=5)
+    rc1, rc2 = st.columns(2)
+    rec_user = rc1.text_input("User ID (your workout history is used to pick your level)", "default", key="rec_user")
+    level_choice = rc2.selectbox("Fitness level", ["Auto (from my workout history)", "beginner", "intermediate", "advanced"])
+
+    loc_mode = st.radio("Location", ["Choose a city", "Enter coordinates", "Skip"], horizontal=True)
+    rec_city, rec_lat, rec_lon = None, None, None
+    if loc_mode == "Choose a city":
+        try:
+            cities = requests.get(f"{API_URL}/api/cities", timeout=60).json()["cities"]
+        except Exception:  # noqa: BLE001
+            cities = ["Bengaluru", "Mysuru", "Hyderabad", "Chennai", "Mumbai", "Pune", "Delhi"]
+        rec_city = st.selectbox("City", cities)
+    elif loc_mode == "Enter coordinates":
+        lc1, lc2 = st.columns(2)
+        rec_lat = lc1.number_input("Latitude", min_value=-90.0, max_value=90.0, value=12.9716, format="%.4f")
+        rec_lon = lc2.number_input("Longitude", min_value=-180.0, max_value=180.0, value=77.5946, format="%.4f")
 
     if st.button("Get Recommendations"):
-        res = requests.post(f"{API_URL}/api/recommend", json={"goal": rec_goal, "current_streak_days": streak})
+        payload = {"goal": rec_goal, "current_streak_days": int(streak), "user_id": rec_user,
+                   "city": rec_city, "latitude": rec_lat, "longitude": rec_lon,
+                   "fitness_level": None if level_choice.startswith("Auto") else level_choice}
+        res = requests.post(f"{API_URL}/api/recommend-plus", json=payload, timeout=60)
         if res.status_code == 200:
             data = res.json()
+            st.info(f"Fitness level: **{data['fitness_level']}** ({data['fitness_level_reason']})")
             st.write("**Recommended Programs:**")
             for p in data["programs"]:
                 st.write(f"- {p}")
-            st.write("**Nearby Gyms (demo data):**")
+            st.write(f"**Nearby Gyms (demo data){' near ' + data['location_used'] if data['location_used'] else ''}:**")
             for g in data["nearby_gyms"]:
-                st.write(f"- {g['name']} — {g['distance_km']} km — ⭐ {g['rating']}")
+                where = f" ({g['city']})" if g.get("city") else ""
+                st.write(f"- {g['name']}{where} — {g['distance_km']} km — ⭐ {g['rating']}")
+            if data.get("location_note"):
+                st.caption(data["location_note"])
             st.write(f"**Suggested Challenge:** {data['challenge']}")
+        else:
+            st.error(f"Error: {res.text}")
 
 # --- Session Performance ---
 with tabs[5]:

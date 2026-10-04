@@ -105,7 +105,10 @@ def t_smart():
     d = call("GET", "/api/smart-gym-reading").json()
     hr = d["reading"]["heart_rate_bpm"]
     advice = d["advice"].lower()
-    expect = "reducing" if hr > 150 else "increase" if hr < 100 else "maintain"
+    if hr < 100 and d["reading"]["resistance_level"] >= 10:
+        expect = "maximum"          # already at the top level: advice switches to pace / duration
+    else:
+        expect = "reducing" if hr > 150 else "increase" if hr < 100 else "maintain"
     return expect in advice, f"HR {hr} bpm, resistance {d['reading']['resistance_level']}, status {d['reading']['equipment_status']} -> {d['advice'][:70]}"
 
 

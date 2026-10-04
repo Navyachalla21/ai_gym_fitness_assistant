@@ -5,19 +5,34 @@ except ImportError:  # pragma: no cover
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 
-# Realistic synthetic training data representing behavioral patterns.
-# Features: [days_since_last_workout, weekly_avg_sessions, avg_session_completion_pct]
-# Label: 1 = likely to skip next workout, 0 = likely to attend
-_TRAINING_X = np.array([
-    [1, 5, 95], [0, 6, 98], [1, 4, 90], [2, 4, 85],
-    [3, 3, 70], [4, 2, 60], [5, 2, 55], [6, 1, 40],
-    [7, 1, 30], [8, 0, 20], [2, 5, 92], [3, 4, 75],
-    [0, 5, 96], [1, 3, 80], [5, 1, 35], [6, 0, 25],
-])
-_TRAINING_Y = np.array([0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 1, 1])
 
-_model = LogisticRegression()
+def _make_training_data(n: int = 400, seed: int = 42):
+    """Synthetic behavioural data (no real user history exists yet).
+
+    Features: [days_since_last_workout, weekly_avg_sessions, avg_session_completion_pct]
+    Label:    1 = skipped the next workout, 0 = attended.
+
+    Each profile has a *probability* of skipping (more days away, fewer sessions and lower
+    completion -> higher), and the label is drawn from it. The same profile can therefore go
+    either way, as with real people. This avoids a perfectly separable toy dataset, so the
+    model learns smooth probabilities (Low / Medium / High) instead of jumping 0% -> 100%."""
+    rng = np.random.default_rng(seed)
+    days = rng.integers(0, 15, n)
+    weekly = np.round(rng.uniform(0, 7, n), 1)
+    completion = np.round(np.clip(rng.normal(70, 22, n), 5, 100), 0)
+    z = 0.38 * (days - 5) - 0.55 * (weekly - 3) - 0.045 * (completion - 65)
+    p_skip = 1 / (1 + np.exp(-z))
+    y = (rng.random(n) < p_skip).astype(int)
+    return np.column_stack([days, weekly, completion]), y
+
+
+_TRAINING_X, _TRAINING_Y = _make_training_data()
+
+# StandardScaler puts the three features on the same scale before the logistic regression
+_model = make_pipeline(StandardScaler(), LogisticRegression(C=1.0))
 _model.fit(_TRAINING_X, _TRAINING_Y)
 
 
