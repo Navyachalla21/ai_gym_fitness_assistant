@@ -1,149 +1,159 @@
-﻿# 🏋️ AI Gym & Fitness Assistant
+# 🏋️ AI Gym & Fitness Assistant
 
-An AI-powered fitness ecosystem that unifies workout detection, diet planning, behavior tracking, IoT-based smart gym assistance, and conversational AI into a single intelligent platform — built as part of an internship project for Unlox Academy / Trivion.
+An AI-powered fitness platform that joins workout detection, diet planning, habit tracking, IoT-based smart gym advice and conversational AI in one system. Built as an internship project for Unlox Academy / Trivion.
 
 ## 🔗 Live Demo
 
 - **Dashboard (Streamlit):** https://aigymfitnessassistant-sqktqokhufhzdfac6pdefs.streamlit.app
 - **Backend API (Render):** https://ai-gym-backend-bwiz.onrender.com
-- **API Docs (Swagger):** https://ai-gym-backend-bwiz.onrender.com/docs
-- **GitHub Repository(Source code)**  https://github.com/Navyachalla21/ai_gym_fitness_assistant
+- **API docs (Swagger):** https://ai-gym-backend-bwiz.onrender.com/docs
+- **Source code:** https://github.com/Navyachalla21/ai_gym_fitness_assistant
 
-> Note: The backend runs on Render's free tier, which spins down after periods of inactivity. The first request after idle time may take 30–50 seconds to respond while the server wakes up.
+> The backend runs on Render's free tier. It sleeps when idle, so the first request can take 30–60 seconds. Its disk is also reset on redeploy, so saved history and meals on the live site are not permanent.
 
 ## 🏗️ Architecture
 
 ![Architecture Diagram](architecture_diagram.png)
 
-## 📖 Project Overview
+## 🧠 The Seven Modules
 
-The AI Gym & Fitness Assistant integrates seven core AI modules into one ecosystem that understands, adapts, and enhances a user's fitness journey — acting as a smart personal trainer, dietician, motivator, and data-driven fitness manager.
+| # | Module | What it does |
+|---|--------|--------------|
+| 1 | **AI Gym Trainer** | Webcam pose detection (MediaPipe + OpenCV). Counts bicep curl reps from the elbow angle, warns about elbow drift, beeps for feedback, and sends the finished session to the backend. |
+| 2 | **AI Dietician & Calorie Coach** | BMI and a Gemini-generated meal plan and grocery list. Also a daily calorie target (Mifflin-St Jeor) and a meal log that shows calories eaten and remaining. |
+| 3 | **Smart Gym Assistant (AI + IoT)** | Reads equipment data (heart rate, resistance, status) live over **MQTT** from a simulated machine and recommends a resistance level and rest time. The Apply button sends the new resistance back to the machine. Falls back to simulated data if no machine is publishing. |
+| 4 | **AI Fitness Habit Tracker** | A logistic-regression model predicts skip risk (Low / Medium / High) and suggests a workout schedule that matches the risk, plus a motivational nudge. |
+| 5 | **Virtual Gym Buddy** | Gemini chat companion with sentiment detection (negation-aware), a memory of the last 5 turns, and a mood trend. |
+| 6 | **Pose-to-Performance Analyzer** | Turns reps, duration and form feedback into a Performance Score, Form Quality % and rating. Sessions are saved, and a **weekly report** with trend and charts is built from them. |
+| 7 | **Gym Recommender & Planner** | Suggests programs, challenges and nearby gyms by goal, streak, fitness level (taken from the user's saved history) and city or coordinates. Gyms are sample data. |
 
-## 🧠 Core AI Modules
-
-| # | Module | Description |
-|---|--------|-------------|
-| 1 | **AI Gym Trainer** | Real-time webcam pose detection (MediaPipe) that counts bicep curl reps, tracks elbow angle, detects poor form (elbow drift), and gives audio + visual feedback. Runs as a standalone script due to webcam/real-time hardware requirements. |
-| 2 | **AI Dietician & Calorie Coach** | Calculates BMI and generates a personalized diet plan, grocery list, and calorie target using Google Gemini (LLM), based on weight, height, goal, and dietary preferences. |
-| 3 | **Smart Gym Assistant (AI + IoT)** | Simulates IoT gym equipment sensor data (heart rate, resistance level, equipment status) and gives real-time intensity/rest advice. |
-| 4 | **AI Fitness Habit Tracker** | Uses a trained logistic regression model to predict workout skip risk based on recent engagement patterns, and sends motivational nudges. |
-| 5 | **Virtual Gym Buddy** | A conversational AI companion (Gemini-powered) with keyword-based sentiment detection that responds supportively based on the user's detected mood. |
-| 6 | **Pose-to-Performance Analyzer** | Scores a completed workout session (reps, duration, form feedback) into a Performance Score, Form Quality %, and Rating. |
-| 7 | **Gym Recommender & Planner** | Recommends workout programs, nearby gyms (demo data), and fitness challenges based on the user's goal and current streak. |
-
-### 🔄 Module Integration
-
-Module 1 (AI Gym Trainer) automatically sends its session results (reps, duration, form feedback) to the backend's `/api/analyze-session` endpoint the moment a webcam session ends — directly feeding Module 6 (Pose-to-Performance Analyzer) without any manual data entry. This is the core "integration layer" connecting real-time detection to performance scoring.
-
-The remaining modules (2, 3, 4, 5, 7) each operate as independent tools within the same dashboard and backend, per the system's modular design.
+### Integration
+- Module 1 posts every finished session to `/api/analyze-session` (Module 6), which stores it.
+- The stored sessions feed the weekly report, the Admin Analytics tab and the recommender's fitness level.
+- Risk checks (Module 4) and chat moods (Module 5) are stored too, so Admin Analytics shows them over time.
 
 ## 🛠️ Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend (Dashboard) | Streamlit (deployed), React.js / Next.js (built, local) |
+| Dashboard | Streamlit (deployed), Plotly charts; Next.js frontend (local, older feature set) |
 | Backend | Python, FastAPI |
-| AI/ML | Google Gemini API (LangChain), MediaPipe (Pose Landmarker Tasks API), OpenCV, scikit-learn |
-| Deployment | Render (backend), Streamlit Community Cloud (dashboard), Docker (containerized setup available) |
-| Version Control | Git / GitHub |
+| AI / ML | Google Gemini via LangChain, MediaPipe PoseLandmarker, OpenCV, scikit-learn |
+| IoT | MQTT (paho-mqtt) over `broker.hivemq.com` |
+| Storage | SQLite (`GYM_DB_PATH` sets the file location) |
+| Deployment | Render (backend), Streamlit Community Cloud (dashboard), Docker files included |
 
 ## 📁 Project Structure
 
+```
 ai_gym_fitness_assistant/
 ├── ai_modules/
-│ ├── pose_detector.py # Module 1: AI Gym Trainer (webcam)
-│ ├── diet_coach.py # Module 2: Diet Coach
-│ ├── smart_gym_assistant.py # Module 3: Smart Gym (IoT simulation)
-│ ├── behavior_predictor.py # Module 4: Habit Tracker
-│ ├── gym_buddy_chat.py # Module 5: Gym Buddy Chat
-│ ├── performance_analyzer.py # Module 6: Performance Analyzer
-│ ├── gym_recommender.py # Module 7: Recommender
-│ └── pose_landmarker_lite.task # MediaPipe pose model
+│   ├── pose_detector.py          # Module 1
+│   ├── diet_coach.py             # Module 2
+│   ├── nutrition_tracker.py      # Module 2: calorie target + meal summary
+│   ├── smart_gym_assistant.py    # Module 3: advice logic
+│   ├── mqtt_bridge.py            # Module 3: MQTT subscriber / publisher
+│   ├── iot_simulator.py          # Module 3: simulated gym machine
+│   ├── behavior_predictor.py     # Module 4
+│   ├── gym_buddy_chat.py         # Module 5
+│   ├── performance_analyzer.py   # Module 6 + weekly report
+│   ├── gym_recommender.py        # Module 7
+│   ├── storage.py                # SQLite storage
+│   └── pose_landmarker_lite.task # MediaPipe model
 ├── backend/
-│ ├── app.py # FastAPI app + routes
-│ ├── Dockerfile
-│ └── requirements.txt
-├── frontend/ # React/Next.js dashboard
-│ ├── app/
-│ │ ├── page.tsx # Dashboard home
-│ │ ├── diet-coach/
-│ │ ├── behavior-risk/
-│ │ ├── gym-buddy/
-│ │ ├── smart-gym/
-│ │ ├── recommendations/
-│ │ └── session-performance/
-│ └── Dockerfile
+│   ├── app.py                    # FastAPI app
+│   ├── analytics_routes.py       # analytics, nutrition, live Smart Gym routes
+│   └── requirements.txt
 ├── streamlit_dashboard/
-│ └── app.py # Streamlit dashboard (deployed)
+│   ├── app.py                    # 7-tab dashboard
+│   ├── admin_analytics.py        # Admin Analytics tab
+│   └── nutrition_ui.py           # Nutrition tracker UI
+├── frontend/                     # Next.js dashboard
+├── run_tests.py                  # 23 API tests
+├── testing_report.md
 ├── docker-compose.yml
 └── README.md
+```
+
+## 🔌 Main API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/diet-plan` | BMI + AI meal plan |
+| GET | `/api/calorie-target` | Daily calorie estimate |
+| POST / DELETE / GET | `/api/meals`, `/api/meals/{id}`, `/api/meals/summary` | Meal log |
+| POST | `/api/behavior-risk` | Skip risk + suggested schedule |
+| POST | `/api/gym-buddy-chat` | Chat + sentiment |
+| POST | `/api/analyze-session` | Score and store a session |
+| GET | `/api/weekly-report` | Weekly report from stored sessions |
+| GET | `/api/smart-gym-reading` | Simulated sensor reading |
+| GET / POST | `/api/smart-gym-live`, `/api/smart-gym-live/apply` | Live MQTT data and resistance command |
+| POST | `/api/recommend`, `/api/recommend-plus` | Recommendations (plus: fitness level and location) |
+| GET | `/api/cities` | Cities available for gym lookup |
+| GET | `/api/analytics/{summary,sessions,risks,mood,users}` | Admin Analytics |
+
+Full list with try-it forms: `/docs`.
 
 ## 🚀 Running Locally
 
-### Option 1: Manual (Python + Node)
+**1. Environment variable** — create `.env` in the project root and in `backend/`:
+```
+GOOGLE_API_KEY=your_gemini_api_key_here
+```
+Never commit this file (it is in `.gitignore`).
 
-**Backend:**
+**2. Backend**
 ```bash
-backend\venv\Scripts\activate
 cd backend
 pip install -r requirements.txt
 uvicorn app:app --reload --port 8000
 ```
 
-**Streamlit Dashboard:**
-```bash
+**3. Streamlit dashboard** (point it at your local backend, otherwise it uses Render)
+```powershell
+$env:API_URL="http://127.0.0.1:8000"
 streamlit run streamlit_dashboard/app.py
 ```
 
-**React Frontend:**
+**4. Smart Gym simulator** (second terminal; makes the dashboard show `source = mqtt`)
 ```bash
-cd frontend
-npm install
-npm run dev
+python ai_modules/iot_simulator.py
 ```
-Visit `http://localhost:3000`
 
-**AI Gym Trainer (webcam):**
+**5. AI Gym Trainer** (webcam; press `q` to finish and send the session)
 ```bash
 python ai_modules/pose_detector.py
 ```
-Press `q` to quit and auto-send session results to the backend.
+Set `BACKEND_API_URL` to send to a backend other than `http://localhost:8000`.
 
-### Option 2: Docker (containerized)
+**6. Next.js frontend (optional)**
+```bash
+cd frontend && npm install && npm run dev
+```
 
+**7. Docker (optional)**
 ```bash
 docker compose up --build
 ```
-This builds and runs both the backend and frontend containers together. Requires Docker Desktop installed and running.
 
-> Docker configuration is included in this repository for containerized deployment. Due to time constraints, the primary deployed demo uses Streamlit Community Cloud + Render (see Live Demo links above); Docker deployment will be fully tested and used post-submission.
+## ✅ Testing
 
-### Environment Variables
+```bash
+python run_tests.py http://127.0.0.1:8000
+python run_tests.py https://ai-gym-backend-bwiz.onrender.com
+```
+Both runs pass **23/23**. Results are written to `test_results.md`. The full report, including manual tests (webcam, dashboard, MQTT round trip), is in [testing_report.md](testing_report.md).
 
-Create a `.env` file in the project root and in `backend/` with:
+## 📌 Known Limitations
 
-GOOGLE_API_KEY=your_gemini_api_key_here
-
-## ✅ Testing Summary
-
-The following was manually tested and verified working:
-
-- **Diet Coach:** Verified correct BMI calculation, category classification, and AI-generated meal plans across multiple goals (muscle gain, weight loss).
-- **Behavior Risk:** Verified skip-risk predictions and nudges across low/medium/high risk scenarios.
-- **Gym Buddy Chat:** Verified sentiment detection (positive/neutral/negative) and contextual AI replies across a multi-turn conversation.
-- **Smart Gym:** Verified simulated sensor readings and matching advice (e.g., high heart rate → rest recommendation).
-- **Recommendations:** Verified goal-based program suggestions, demo gym listings, and challenge suggestions.
-- **Session Performance:** Verified performance score, form quality %, and rating calculations from sample session data.
-- **AI Gym Trainer (Module 1):** Tested live with webcam and physical dumbbells — verified real-time rep counting, elbow angle tracking, form-drift warning (audio beep), and good-rep confirmation (audio beep).
-- **Module 1 → Module 6 Integration:** Verified that ending a live webcam session automatically POSTs session data to the backend and returns a live performance score — no manual re-entry required.
-- **Deployment:** Verified the live Streamlit Cloud dashboard successfully communicates with the live Render-hosted backend end-to-end, including real Gemini AI responses, from a public URL (not localhost).
-- **Cross-platform parity:** Verified all 6 dashboard modules produce consistent results across both the Streamlit dashboard and the React/Next.js frontend.
-
-## 📌 Notes & Known Limitations
-
-- The AI Gym Trainer (Module 1) runs as a standalone Python script rather than a web page, due to the real-time webcam access and frame-processing requirements of MediaPipe/OpenCV, which are better suited to a native script than a browser environment. It integrates with the rest of the system via the backend API.
-- Render's free-tier backend spins down after 15 minutes of inactivity; the first request after idle time will be slower (~30–50s) while it restarts.
-- Docker containerization is complete and available in the repository but not yet used as the primary deployment method, due to project timeline constraints.
+- **Gyms are sample data** placed around real city centres, not live map results.
+- **Render free tier:** the service sleeps when idle, and its disk resets on redeploy, so history and meals saved on the live site can disappear. Locally they persist.
+- **Module 1 runs as a local script**, not in the browser, because it needs direct webcam access.
+- **MQTT uses a public broker** with a unique topic name; it is fine for a demo but not private.
+- **Next.js frontend** does not include the analytics, nutrition and live MQTT features; use the Streamlit dashboard for the full set.
+- **Skip-risk model** is trained on synthetic data (400 rows), so it shows the method rather than real-world accuracy.
+- **Performance score** weights pace heavily, so slow, controlled sets score low.
+- Docker files are included but the deployed demo uses Render and Streamlit Cloud.
 
 ## 👩‍💻 Author
 
