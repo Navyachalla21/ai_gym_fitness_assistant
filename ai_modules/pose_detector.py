@@ -10,6 +10,38 @@ import numpy as np
 import time
 import os
 import threading
+import sys
+
+NO_VOICE = "--no-voice" in sys.argv   # test the trainer without any speech
+FREE_MODE = "--free" in sys.argv      # old mode: you curl whenever you like; the voice only comments
+
+# Voice coach (college extension). If it cannot be loaded, the trainer still works silently.
+try:
+    from voice_coach import VoiceCoach, NullCoach, GuidedCounter
+except Exception:  # noqa: BLE001
+    VoiceCoach = None
+    GuidedCounter = None
+
+    class NullCoach:  # minimal stand-in
+        muted = False
+
+        def start(self, *a, **k):
+            return self
+
+        def update(self, *a, **k):
+            pass
+
+        def notice(self, *a, **k):
+            return False
+
+        def announce_end(self, *a, **k):
+            pass
+
+        def close(self, *a, **k):
+            pass
+
+        def toggle_mute(self):
+            return False
 
 BaseOptions = mp.tasks.BaseOptions
 PoseLandmarker = mp.tasks.vision.PoseLandmarker
@@ -58,6 +90,7 @@ def calculate_angle(a, b, c):
         angle = 360 - angle
 
     return angle
+
 
 def check_elbow_drift(shoulder, elbow, w, shoulder_width_px=None):
     """Returns True if the elbow has drifted too far from the torso (common curl mistake).
@@ -133,6 +166,7 @@ def send_session(reps, duration, feedback_log):
     if reps == 0 and not feedback_log:
         print("No reps or form events were recorded, so this session was not saved.")
         return
+
     backend_url = os.getenv("BACKEND_API_URL", "http://localhost:8000")
     try:
         response = requests.post(f"{backend_url}/api/analyze-session", json={
@@ -157,7 +191,10 @@ def run_pose_detection():
     """
     Opens the webcam, detects pose landmarks in real time using MediaPipe's
     Tasks API (PoseLandmarker), calculates elbow angle, and counts bicep curl reps.
-    Press 'q' or Esc in the video window to quit (Ctrl+C in the terminal also works
+    A voice coach speaks the pace ("Up" / "Down"), form corrections, motivation and
+    rep-milestone celebrations. Press 'm' to mute / unmute the voice.
+    By default the voice LEADS like a trainer ("Up", "Down", "1. Up" ...); use --free to curl
+    at your own pace. Press 'q' or Esc in the video window to quit (Ctrl+C in the terminal also works
     and still saves the session).
     """
     options = PoseLandmarkerOptions(
@@ -167,7 +204,20 @@ def run_pose_detection():
     )
 
     rep_counter = BicepCurlCounter()
-    cap = cv2.VideoCapture(0)
+    # DirectShow + MJPG usually gives 30 FPS on Windows webcams (the default mode can be stuck near 6-7)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    # Keep the camera queue short and the picture small, so what you see on screen is what
+    # you are doing right now (a long queue makes the counter react to old frames).
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    fps = 0.0
+    cam_ms = det_ms = 0.0
+    last_frame_t = time.time()
+    angle_text = "--"
     start_time = time.time()
     feedback_log = []
 
@@ -177,23 +227,46 @@ def run_pose_detection():
     last_timestamp_ms = -1
 
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(WINDOW_NAME, 960, 540)
+    cv2.resizeWindow(WINDOW_NAME, 800, 600)
 
     count, stage = 0, None
     landmarker = PoseLandmarker.create_from_options(options)
+
+    # Voice coach: never lets a speech problem stop the trainer
+    try:
+        coach = VoiceCoach().start() if (VoiceCoach and not NO_VOICE) else NullCoach()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[voice] could not start the voice coach ({exc}); continuing without voice")
+        coach = NullCoach()
+
+    # Trainer-led mode (default): the voice says Up / Down and you follow it.
+    guided = GuidedCounter is not None and not FREE_MODE
+    if guided:
+        rep_counter = GuidedCounter(getattr(coach, "speaker", None))
+
     try:
         while cap.isOpened():
+            t0 = time.time()
             ret, frame = cap.read()
+            cam_ms = 0.9 * cam_ms + 0.1 * (time.time() - t0) * 1000
             if not ret:
                 break
 
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            now_t = time.time()
+            dt = max(1e-3, now_t - last_frame_t)
+            last_frame_t = now_t
+            fps = 0.9 * fps + 0.1 * (1.0 / dt) if fps else 1.0 / dt
+
+            small = cv2.resize(frame, (320, 240))
+            rgb_frame = cv2.cvtColor(small, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
             # VIDEO mode needs strictly increasing timestamps
             timestamp_ms = max(last_timestamp_ms + 1, int((time.time() - start_time) * 1000))
             last_timestamp_ms = timestamp_ms
 
+            t1 = time.time()
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
+            det_ms = 0.9 * det_ms + 0.1 * (time.time() - t1) * 1000
 
             image = frame.copy()
             h, w, _ = image.shape
@@ -205,18 +278,23 @@ def run_pose_detection():
                 if min(visibility(lm) for lm in arm) < MIN_VISIBILITY:
                     raise ArmNotVisible
 
-                shoulder_width_px = None
                 left_sh = landmarks[LEFT_SHOULDER]
-                if visibility(left_sh) >= MIN_VISIBILITY:
-                    shoulder_width_px = abs(left_sh.x - landmarks[RIGHT_SHOULDER].x) * w
+                if visibility(left_sh) < MIN_VISIBILITY:
+                    raise ArmNotVisible   # both shoulders must be in view, else you are too close
+                shoulder_width_px = abs(left_sh.x - landmarks[RIGHT_SHOULDER].x) * w
 
                 shoulder = [landmarks[RIGHT_SHOULDER].x, landmarks[RIGHT_SHOULDER].y]
                 elbow = [landmarks[RIGHT_ELBOW].x, landmarks[RIGHT_ELBOW].y]
                 wrist = [landmarks[RIGHT_WRIST].x, landmarks[RIGHT_WRIST].y]
 
                 angle = calculate_angle(shoulder, elbow, wrist)
+                angle_text = str(int(angle))
                 drifted = check_elbow_drift(shoulder, elbow, w, shoulder_width_px)
                 count, stage, feedback, is_warning = rep_counter.update(angle, drifted)
+
+                # Speak what the screen shows (changes only; the coach handles cooldowns)
+                if not guided:   # in guided mode the counter itself speaks
+                    coach.update(count, stage, feedback, is_warning)
 
                 # Log + beep only when something CHANGES (not on every frame)
                 if count > last_count:
@@ -241,9 +319,11 @@ def run_pose_detection():
                     cv2.circle(image, (cx, cy), 4, (0, 255, 0), -1)
 
             except ArmNotVisible:
-                count, stage, feedback = rep_counter.counter, rep_counter.stage, "Arm not fully visible - step back"
+                count, stage, feedback = rep_counter.counter, rep_counter.stage, "Step back: show both shoulders + arm"
+                coach.notice("arm", "Step back so I can see your arm.", cooldown=15.0)
             except (IndexError, AttributeError):
                 count, stage, feedback = rep_counter.counter, rep_counter.stage, "No person detected"
+                coach.notice("person", "I can't see you. Please step into view.", cooldown=20.0)
 
             cv2.rectangle(image, (0, 0), (250, 90), (30, 30, 30), -1)
             cv2.putText(image, f"REPS: {count}", (10, 30),
@@ -253,16 +333,31 @@ def run_pose_detection():
             cv2.putText(image, feedback, (10, 85),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 255), 1, cv2.LINE_AA)
 
+            # Live diagnostics (angle must be >160 when straight, <50 when fully curled)
+            cv2.putText(image, f"ANGLE: {angle_text}  FPS: {fps:.0f}  cam: {cam_ms:.0f}ms  model: {det_ms:.0f}ms", (10, h - 12),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv2.LINE_AA)
+
+            # Voice status in the top-right corner
+            voice_text = "VOICE: MUTED (m)" if coach.muted else "VOICE: ON (m = mute)"
+            voice_color = (0, 0, 255) if coach.muted else (0, 255, 0)
+            cv2.putText(image, voice_text, (max(10, w - 230), 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, voice_color, 1, cv2.LINE_AA)
+
             cv2.imshow(WINDOW_NAME, image)
 
             key = cv2.waitKey(10) & 0xFF
             if key in (ord('q'), 27):  # q or Esc
                 break
+            if key == ord('m'):
+                coach.toggle_mute()
     except KeyboardInterrupt:
         print("\nStopped with Ctrl+C — saving the session so far...")
     finally:
         cap.release()
         cv2.destroyAllWindows()
+
+    # Queue the closing line first; it plays while the session is being sent
+    coach.announce_end(rep_counter.counter)
 
     # Send the results BEFORE closing the landmarker, so a slow/stuck shutdown can't lose the session
     send_session(rep_counter.counter, int(time.time() - start_time), feedback_log)
@@ -271,6 +366,8 @@ def run_pose_detection():
         landmarker.close()
     except Exception:  # noqa: BLE001
         pass
+
+    coach.close()  # waits (briefly) for the last sentence to finish
 
 
 if __name__ == "__main__":
