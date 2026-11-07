@@ -3,11 +3,28 @@ import streamlit as st
 import requests
 from admin_analytics import render_admin_analytics
 from nutrition_ui import render_nutrition_tracker
+from auth_ui import require_login, render_history_page
+from theme_fix import inject_css
+from sidebar_ui import render_guide, render_clip_row
 
 API_URL = os.getenv("API_URL", "https://ai-gym-backend-bwiz.onrender.com")
 
 st.set_page_config(page_title="AI Gym & Fitness Assistant", page_icon="🏋️", layout="wide")
+inject_css()
+require_login()
 st.title("🏋️ AI Gym & Fitness Assistant — Dashboard")
+
+# Left-menu pages (History and the How-to-use manual open as full pages)
+_view = st.session_state.get("view", "dashboard")
+if _view == "history":
+    st.header("🗂 My History & Privacy")
+    render_history_page()
+    st.stop()
+if _view == "guide":
+    render_guide()
+    st.stop()
+
+render_clip_row()
 
 tabs = st.tabs(["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym", "🎯 Recommendations", "📈 Session Performance", "🛠️ Admin Analytics"])
 
@@ -208,7 +225,11 @@ with tabs[5]:
             col1.metric("Performance Score", data["performance_score"])
             col2.metric("Form Quality", f"{data['form_quality_pct']}%")
             col3.metric("Rating", data["rating"])
+        else:
+            st.error(f"Error: {res.text}")
 
 # --- Admin Analytics ---
 with tabs[6]:
     render_admin_analytics(API_URL)
+
+# My History & Privacy now lives in the left menu (🗂 My History), so it is not repeated here.

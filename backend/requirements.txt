@@ -94,3 +94,5 @@ xxhash==4.0.1
 zstandard==0.25.0
 plotly
 paho-mqtt
+bcrypt
+PyJWT
