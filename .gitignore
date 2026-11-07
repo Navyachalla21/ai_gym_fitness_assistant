@@ -8,3 +8,7 @@ frontend/.next/
 frontend/node_modules/
 *.task
 gym_data.db
+
+data/*.db
+*.db
+*.log
