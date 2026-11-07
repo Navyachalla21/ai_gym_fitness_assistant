@@ -31,10 +31,11 @@ def quote_of_the_day() -> str:
 
 
 @st.cache_data(show_spinner=False)
-def _video_tag() -> str:
+def _video_tag(path: str = "") -> str:
+    path = path or _VIDEO
     try:
-        if os.path.isfile(_VIDEO) and os.path.getsize(_VIDEO) <= _MAX_VIDEO_BYTES:
-            with open(_VIDEO, "rb") as fh:
+        if os.path.isfile(path) and os.path.getsize(path) <= _MAX_VIDEO_BYTES:
+            with open(path, "rb") as fh:
                 b64 = base64.b64encode(fh.read()).decode()
             return f'<video autoplay muted loop playsinline src="data:video/mp4;base64,{b64}"></video>'
     except OSError:
@@ -44,12 +45,12 @@ def _video_tag() -> str:
 
 _BANNER = """
 <!doctype html><html><head><meta charset="utf-8"><style>
-*{box-sizing:border-box;margin:0}body{background:transparent;font-family:Arial,sans-serif}
-.box{position:relative;height:150px;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.12);
+*{box-sizing:border-box;margin:0}html,body{height:100%}body{background:transparent;font-family:Arial,sans-serif}
+.box{position:relative;height:100vh;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,.12);
  background:linear-gradient(120deg,#070b14,#0b1f2a 60%,#10243a)}
 video,canvas{position:absolute;inset:0;width:100%;height:100%}video{object-fit:cover;opacity:.55}
 .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,11,20,.15),rgba(7,11,20,.7))}
-.t{position:absolute;left:14px;bottom:12px;color:#fff;font-weight:700;font-size:15px;letter-spacing:.02em}
+.t{position:absolute;left:16px;bottom:14px;color:#fff;font-weight:700;font-size:__FS__px;letter-spacing:.02em}
 .t span{color:#c6ff3d}
 </style></head><body><div class="box">__VIDEO__<canvas id="c"></canvas><div class="shade"></div>
 <div class="t">Train smart. <span>Stay consistent.</span></div></div>
@@ -74,24 +75,83 @@ requestAnimationFrame(frame);
 """
 
 
+MODULE_NAMES = ["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym",
+                "🎯 Recommendations", "📈 Session Performance", "🛠️ Admin Analytics"]
+
+_READABLE_CSS = """
+<style>
+/* ORIGINAL dark neon look; only fixes: text always bright white, typed text visible */
+.stApp, .stApp p, .stApp li, .stApp label, .stApp span,
+.stApp div[data-testid="stMarkdownContainer"] { color:#f1f5ff; }
+.stApp h1, .stApp h2, .stApp h3, .stApp h4 { color:#ffffff !important; background:none !important;
+    -webkit-text-fill-color:#ffffff !important; opacity:1 !important; }
+.stApp [data-testid="stCaptionContainer"], .stApp small { color:#b4c2e0 !important; }
+section[data-testid="stSidebar"] { background:#0b1220 !important; border-right:1px solid rgba(255,255,255,.10); }
+section[data-testid="stSidebar"] * { color:#f1f5ff; }
+section[data-testid="stSidebar"] [data-testid="stExpander"] { border:1px solid rgba(255,255,255,.14); border-radius:14px;
+    background:rgba(255,255,255,.04); }
+section[data-testid="stSidebar"] [data-testid="stExpander"] summary p { font-weight:700; }
+.stApp .stButton > button p, .stApp .stFormSubmitButton > button p { color:#0a1200 !important; font-weight:700; }
+.stApp .stButton > button:disabled p { color:#8793ad !important; }
+section[data-testid="stSidebar"] .stButton > button:disabled { background:#16324a !important; border:1px solid #22d3ee !important; }
+section[data-testid="stSidebar"] .stButton > button:disabled p { color:#bff4ff !important; font-weight:700; }
+.stApp [data-testid="stMetricValue"], .stApp [data-testid="stMetricValue"] * { color:#c6ff3d !important; }
+.stApp [data-testid="stMetricLabel"], .stApp [data-testid="stMetricLabel"] * { color:#d6e0f5 !important; }
+/* inputs: dark boxes, white text */
+.stApp div[data-testid="stTextInputRootElement"], .stApp div[data-testid="stNumberInputContainer"],
+.stApp div[data-baseweb="input"], .stApp div[data-baseweb="base-input"], .stApp div[data-baseweb="textarea"],
+.stApp div[data-baseweb="select"] > div { background:#0f1729 !important; border-color:rgba(255,255,255,.28) !important; }
+.stApp input, .stApp textarea { background:#0f1729 !important; color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important; caret-color:#c6ff3d !important; }
+.stApp input::placeholder, .stApp textarea::placeholder { color:#8d9bbd !important; -webkit-text-fill-color:#8d9bbd !important; }
+.stApp div[data-baseweb="select"] * { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
+.stApp [data-testid="stNumberInput"] button { background:#1b2742 !important; }
+.stApp [data-testid="stNumberInput"] button svg { fill:#ffffff !important; }
+</style>
+"""
+
+
+def apply_readable_css():
+    st.markdown(_READABLE_CSS, unsafe_allow_html=True)
+
+
+def banner(height: int = 160, font: int = 15, video_path: str = ""):
+    """The running ECG animation (or a real clip when a video file exists)."""
+    tag = _video_tag(video_path) if video_path else _video_tag()
+    components.html(_BANNER.replace("__VIDEO__", tag).replace("__FS__", str(font)), height=height)
+
+
+def render_clip_row():
+    """Small running clip under the page title (the single manual lives in the left menu)."""
+    banner(150, 16)
+
+
 def _go(view: str):
     st.session_state["view"] = view
 
 
+def _pick(i: int):
+    st.session_state["view"] = "dashboard"
+    st.session_state["module"] = i
+
+
 def _logout():
-    for key in ("token", "user", "guest", "view"):
+    for key in ("token", "user", "guest", "view", "module"):
         st.session_state.pop(key, None)
 
 
 def _leave_guest():
-    for key in ("guest", "view"):
+    for key in ("guest", "view", "module"):
         st.session_state.pop(key, None)
 
 
 def render_sidebar(guest: bool = False):
-    """Welcome + quote + running clip, then Dashboard / My History / How to use / Log out."""
+    """Welcome + quote, then Dashboard (7 core modules), My History, How to use, Log out."""
+    apply_readable_css()
     view = st.session_state.get("view", "dashboard")
+    current = st.session_state.get("module", 0)
     with st.sidebar:
+        banner(110, 13)
         if guest:
             st.markdown("### Welcome, guest! 👋")
         else:
@@ -101,10 +161,13 @@ def render_sidebar(guest: bool = False):
         st.markdown(f"*“{quote_of_the_day()}”*")
         st.divider()
 
-        st.button("🏠 Dashboard", on_click=_go, args=("dashboard",), width="stretch", disabled=(view == "dashboard"))
+        with st.expander("🏠 Dashboard", expanded=(view == "dashboard")):
+            for i, label in enumerate(MODULE_NAMES):
+                st.button(label, key=f"mod_{i}", on_click=_pick, args=(i,), width="stretch",
+                          disabled=(view == "dashboard" and current == i))
         if not guest:
             st.button("🗂 My History", on_click=_go, args=("history",), width="stretch", disabled=(view == "history"))
-        st.button("📖 How to use", on_click=_go, args=("guide",), width="stretch", disabled=(view == "guide"))
+        st.button("📖 User manual", on_click=_go, args=("guide",), width="stretch", disabled=(view == "guide"))
 
         st.divider()
         if guest:
@@ -113,15 +176,7 @@ def render_sidebar(guest: bool = False):
         else:
             st.button("Log out", on_click=_logout, width="stretch")
 
-def render_clip_row():
-    """Small running clip under the page title, with the user-manual button next to it."""
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        components.html(_BANNER.replace("__VIDEO__", _video_tag()), height=160)
-    with c2:
-        st.markdown("**New here?**")
-        st.caption("Learn how to use every module, step by step.")
-        st.button("📖 User manual", on_click=_go, args=("guide",), key="manual_main", width="stretch")
+
 def render_guide():
     """Step-by-step manual for every module."""
     st.header("📖 How to use the AI Gym & Fitness Assistant")
@@ -130,8 +185,8 @@ def render_guide():
     st.subheader("Quick start")
     st.markdown("""
 1. **Create an account** (or log in). Your data is private to your account.
-2. Pick a **tab** at the top of the Dashboard. Each tab is one AI module.
-3. Fill in the fields and press the button in that tab.
+2. Open **🏠 Dashboard** in the left menu. It lists the **7 core modules**. Click one to open it.
+3. Fill in the fields and press the button in that module.
 4. Everything you save is remembered. Open **🗂 My History** in the left menu to see it, or delete it.
 5. Use **Log out** at the bottom of the left menu when you finish.
 """)
@@ -255,7 +310,7 @@ Deleted data is gone for good and is not remembered. Data you keep is remembered
         st.markdown("""
 - **The first action is slow.** The free server can take up to a minute to wake up. Please wait.
 - **Is my data private?** Yes. Each account sees only its own data. Guest mode uses shared data that is not private.
-- **Why do I see no charts?** Use the other tabs first (for example Behavior Risk or Session Performance). Charts appear once data is saved.
+- **Why do I see no charts?** Use the other modules first (for example Behavior Risk or Session Performance). Charts appear once data is saved.
 - **Forgot to log out on a shared computer?** Press **Log out** in the left menu.
 - **Also on your computer:** the voice coach and the heart-rate monitor run beside the AI Trainer.
 """)

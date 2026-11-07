@@ -71,26 +71,33 @@ def require_login():
         render_sidebar(guest=True)
         return
 
-    st.title("AI Gym & Fitness Assistant")
-    st.caption("Log in to keep your own history. Your data stays private to your account.")
-    login_tab, register_tab = st.tabs(["Log in", "Create account"])
-    with login_tab:
-        with st.form("login_form"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            if st.form_submit_button("Log in"):
-                _sign_in("/auth/login", {"username": u, "password": p})
-    with register_tab:
-        with st.form("register_form"):
-            name = st.text_input("Your name")
-            u2 = st.text_input("Choose a username (letters, numbers, underscore)")
-            p2 = st.text_input("Choose a password (min 8 characters)", type="password")
-            if st.form_submit_button("Create account"):
-                _sign_in("/auth/register", {"username": u2, "password": p2, "display_name": name})
-    if st.button("Continue as guest"):
-        st.session_state["guest"] = True
-        st.session_state["view"] = "dashboard"
-        st.rerun()
+    from sidebar_ui import apply_readable_css, banner
+    apply_readable_css()
+    left, right = st.columns([1, 1], gap="large")
+    with left:
+        st.title("🏋️ AI Gym & Fitness Assistant")
+        st.caption("Log in to keep your own history. Your data stays private to your account.")
+        login_tab, register_tab = st.tabs(["Log in", "Create account"])
+        with login_tab:
+            with st.form("login_form"):
+                u = st.text_input("Username")
+                p = st.text_input("Password", type="password")
+                if st.form_submit_button("Log in"):
+                    _sign_in("/auth/login", {"username": u, "password": p})
+        with register_tab:
+            with st.form("register_form"):
+                name = st.text_input("Your name")
+                u2 = st.text_input("Choose a username (letters, numbers, underscore)")
+                p2 = st.text_input("Choose a password (min 8 characters)", type="password")
+                if st.form_submit_button("Create account"):
+                    _sign_in("/auth/register", {"username": u2, "password": p2, "display_name": name})
+        if st.button("Continue as guest"):
+            st.session_state["guest"] = True
+            st.session_state["view"] = "dashboard"
+            st.rerun()
+    with right:
+        # put your clip at assets/login.mp4 (under 6 MB); until then the running ECG animation is shown
+        banner(520, 26, os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "login.mp4"))
     st.stop()
 
 

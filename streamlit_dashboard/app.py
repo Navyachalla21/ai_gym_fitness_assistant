@@ -26,10 +26,9 @@ if _view == "guide":
 
 render_clip_row()
 
-tabs = st.tabs(["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym", "🎯 Recommendations", "📈 Session Performance", "🛠️ Admin Analytics"])
-
+_sel = st.session_state.get("module", 0)
 # --- Diet Coach ---
-with tabs[0]:
+if _sel == 0:
     st.subheader("AI Dietician & Calorie Coach")
     col1, col2 = st.columns(2)
     weight = col1.number_input("Weight (kg)", min_value=30.0, max_value=200.0, value=70.0)
@@ -52,7 +51,7 @@ with tabs[0]:
     render_nutrition_tracker(API_URL, weight, height, goal)
 
 # --- Behavior Risk ---
-with tabs[1]:
+if _sel == 1:
     st.subheader("AI Fitness Habit Tracker")
     days = st.slider("Days since last workout", 0, 14, 2)
     weekly = st.slider("Average sessions per week", 0.0, 7.0, 4.0)
@@ -84,7 +83,7 @@ with tabs[1]:
             st.error(f"Error: {res.text}")
 
 # --- Gym Buddy Chat ---
-with tabs[2]:
+if _sel == 2:
     st.subheader("Virtual Gym Buddy")
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -104,7 +103,7 @@ with tabs[2]:
             st.write(f"**Buddy** _(detected mood: {sentiment})_: {msg}")
 
 # --- Smart Gym ---
-with tabs[3]:
+if _sel == 3:
     st.subheader("Smart Gym Assistant (AI + IoT)")
     st.caption("Equipment publishes sensor data over MQTT; the backend reads it, recommends a resistance "
                "and rest time, and can send the new resistance back to the machine.")
@@ -163,7 +162,7 @@ with tabs[3]:
             st.info(data["advice"])
 
 # --- Recommendations ---
-with tabs[4]:
+if _sel == 4:
     st.subheader("Gym Recommender & Planner")
     rec_goal = st.selectbox("Your goal", ["weight loss", "muscle gain", "endurance", "general fitness"], key="rec_goal")
     streak = st.number_input("Current streak (days)", min_value=0, value=5)
@@ -206,7 +205,7 @@ with tabs[4]:
             st.error(f"Error: {res.text}")
 
 # --- Session Performance ---
-with tabs[5]:
+if _sel == 5:
     st.subheader("Pose-to-Performance Analyzer")
     st.caption("Enter results from a completed AI Gym Trainer session (run pose_detector.py separately).")
     reps = st.number_input("Reps completed", min_value=0, value=12)
@@ -229,7 +228,7 @@ with tabs[5]:
             st.error(f"Error: {res.text}")
 
 # --- Admin Analytics ---
-with tabs[6]:
+if _sel == 6:
     render_admin_analytics(API_URL)
 
 # My History & Privacy now lives in the left menu (🗂 My History), so it is not repeated here.
