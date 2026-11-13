@@ -136,7 +136,7 @@ def _pick(i: int):
 
 
 def _logout():
-    for key in ("token", "user", "guest", "view", "module"):
+    for key in ("token", "user", "guest", "view", "module", "profile", "profile_checked", "profile_skip", "member_id"):
         st.session_state.pop(key, None)
 
 
@@ -158,6 +158,8 @@ def render_sidebar(guest: bool = False):
             user = st.session_state.get("user", {}) or {}
             name = user.get("display_name") or user.get("username") or "Athlete"
             st.markdown(f"### Welcome, {name}! 👋")
+        if not guest and st.session_state.get("member_id"):
+            st.caption(f"Member ID: {st.session_state['member_id']}")
         st.markdown(f"*“{quote_of_the_day()}”*")
         st.divider()
 
@@ -166,6 +168,7 @@ def render_sidebar(guest: bool = False):
                 st.button(label, key=f"mod_{i}", on_click=_pick, args=(i,), width="stretch",
                           disabled=(view == "dashboard" and current == i))
         if not guest:
+            st.button("👤 My Profile", on_click=_go, args=("profile",), width="stretch", disabled=(view == "profile"))
             st.button("🗂 My History", on_click=_go, args=("history",), width="stretch", disabled=(view == "history"))
         st.button("📖 User manual", on_click=_go, args=("guide",), width="stretch", disabled=(view == "guide"))
 

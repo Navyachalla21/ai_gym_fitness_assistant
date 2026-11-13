@@ -1,23 +1,27 @@
+import json
 import os
+import re
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
+from streamlit_mic_recorder import speech_to_text
 from admin_analytics import render_admin_analytics
 from nutrition_ui import render_nutrition_tracker
 from auth_ui import require_login, render_history_page
-from theme_fix import inject_css
 from sidebar_ui import render_guide, render_clip_row
+from pose_trainer import pose_trainer
+from theme_fix import inject_css
 
 API_URL = os.getenv("API_URL", "https://ai-gym-backend-bwiz.onrender.com")
 
 st.set_page_config(page_title="AI Gym & Fitness Assistant", page_icon="🏋️", layout="wide")
-inject_css()
-require_login()
+inject_css()             # neon dark look: lime buttons, pill tabs, metric cards
+require_login()          # login screen, sidebar, first-login profile setup and the My Profile page
 st.title("🏋️ AI Gym & Fitness Assistant — Dashboard")
 
-# Left-menu pages (History and the How-to-use manual open as full pages)
 _view = st.session_state.get("view", "dashboard")
 if _view == "history":
-    st.header("🗂 My History & Privacy")
+    st.subheader("🗂 My History & Privacy")
     render_history_page()
     st.stop()
 if _view == "guide":
@@ -25,14 +29,23 @@ if _view == "guide":
     st.stop()
 
 render_clip_row()
-
 _sel = st.session_state.get("module", 0)
+_profile = st.session_state.get("profile") or {}
+
+
+def _clamp(value, low, high, default):
+    try:
+        return min(max(float(value), low), high)
+    except (TypeError, ValueError):
+        return default
+
+
 # --- Diet Coach ---
 if _sel == 0:
     st.subheader("AI Dietician & Calorie Coach")
     col1, col2 = st.columns(2)
-    weight = col1.number_input("Weight (kg)", min_value=30.0, max_value=200.0, value=70.0)
-    height = col2.number_input("Height (cm)", min_value=100.0, max_value=220.0, value=170.0)
+    weight = col1.number_input("Weight (kg)", min_value=30.0, max_value=200.0, value=_clamp(_profile.get("weight_kg"), 30.0, 200.0, 70.0))
+    height = col2.number_input("Height (cm)", min_value=100.0, max_value=220.0, value=_clamp(_profile.get("height_cm"), 100.0, 220.0, 170.0))
     goal = st.selectbox("Goal", ["weight loss", "muscle gain", "endurance", "general fitness"])
     preferences = st.text_input("Dietary preferences (e.g., vegetarian, vegan, no restrictions)", "no restrictions")
 
@@ -88,19 +101,44 @@ if _sel == 2:
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    user_msg = st.text_input("Talk to your gym buddy:", key="buddy_input")
-    if st.button("Send") and user_msg:
-        res = requests.post(f"{API_URL}/api/gym-buddy-chat", json={"message": user_msg})
+    def _send_to_buddy(msg):
+        res = requests.post(f"{API_URL}/api/gym-buddy-chat", json={"message": msg})
         if res.status_code == 200:
             data = res.json()
-            st.session_state.chat_history.append(("You", user_msg, None))
+            st.session_state.chat_history.append(("You", msg, None))
             st.session_state.chat_history.append(("Buddy", data["reply"], data["sentiment"]))
+            st.session_state["speak_text"] = data["reply"]
+        else:
+            st.error(f"Error: {res.text}")
+
+    # one bar: text box + microphone + speaker toggle + Send
+    c_text, c_mic, c_spk, c_send = st.columns([8, 1.4, 1.2, 1.4], vertical_alignment="bottom")
+    user_msg = c_text.text_input("Message", key="buddy_input", label_visibility="collapsed",
+                                 placeholder="Type here, or tap 🎤 and talk to your gym buddy...")
+    with c_mic:
+        spoken = speech_to_text(language="en", start_prompt="🎤", stop_prompt="⏹",
+                                just_once=True, use_container_width=True, key="buddy_voice")
+    speak_on = c_spk.toggle("🔊", key="buddy_speak", help="Read the buddy's replies aloud")
+    send_clicked = c_send.button("Send", use_container_width=True)
+
+    if spoken:
+        st.caption(f'You said: "{spoken}"')
+        _send_to_buddy(spoken)
+    elif send_clicked and user_msg:
+        _send_to_buddy(user_msg)
 
     for sender, msg, sentiment in st.session_state.chat_history:
         if sender == "You":
             st.write(f"**You:** {msg}")
         else:
             st.write(f"**Buddy** _(detected mood: {sentiment})_: {msg}")
+
+    to_speak = st.session_state.pop("speak_text", None)
+    if speak_on and to_speak:
+        clean = re.sub(r"[*_#`>]", "", to_speak)
+        components.html(
+            "<script>try{var u=new SpeechSynthesisUtterance(" + json.dumps(clean) + ");"
+            "u.rate=1.0;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(e){}</script>", height=0)
 
 # --- Smart Gym ---
 if _sel == 3:
@@ -167,7 +205,7 @@ if _sel == 4:
     rec_goal = st.selectbox("Your goal", ["weight loss", "muscle gain", "endurance", "general fitness"], key="rec_goal")
     streak = st.number_input("Current streak (days)", min_value=0, value=5)
     rc1, rc2 = st.columns(2)
-    rec_user = rc1.text_input("User ID (your workout history is used to pick your level)", "default", key="rec_user")
+    rec_user = rc1.text_input("User ID (your workout history is used to pick your level)", (st.session_state.get("user") or {}).get("username", "default"), key="rec_user")
     level_choice = rc2.selectbox("Fitness level", ["Auto (from my workout history)", "beginner", "intermediate", "advanced"])
 
     loc_mode = st.radio("Location", ["Choose a city", "Enter coordinates", "Skip"], horizontal=True)
@@ -207,7 +245,31 @@ if _sel == 4:
 # --- Session Performance ---
 if _sel == 5:
     st.subheader("Pose-to-Performance Analyzer")
-    st.caption("Enter results from a completed AI Gym Trainer session (run pose_detector.py separately).")
+    st.markdown("### 📷 Live AI Trainer (laptop webcam or phone camera)")
+    st.caption("Press Start camera, allow the camera, and do bicep curls. The trainer counts your reps, "
+               "checks your elbow and speaks to you. Press Finish and analyze to get your score.")
+    live = pose_trainer(key="live_trainer")
+    if live and live.get("finished") and st.session_state.get("last_live_id") != live["id"]:
+        st.session_state["last_live_id"] = live["id"]
+        _reps = int(live["reps"]); _dur = max(1, int(live["duration"]))
+        _good = int(live["good"]); _total = max(1, int(live["total"]))
+        _fb = ["Good rep!"] * _good + ["Adjust form"] * max(0, _total - _good)
+        _res = requests.post(f"{API_URL}/api/analyze-session",
+                             json={"reps": _reps, "duration_seconds": _dur, "form_feedback_list": _fb})
+        st.session_state["last_live_result"] = (_reps, _dur, _res.json() if _res.status_code == 200 else None, _res.text)
+    if st.session_state.get("last_live_result"):
+        _reps, _dur, _data, _txt = st.session_state["last_live_result"]
+        if _data:
+            st.success(f"Last live session: {_reps} reps in {_dur} s")
+            _c1, _c2, _c3 = st.columns(3)
+            _c1.metric("Performance Score", _data["performance_score"])
+            _c2.metric("Form Quality", f"{_data['form_quality_pct']}%")
+            _c3.metric("Rating", _data["rating"])
+        else:
+            st.error(f"Error: {_txt}")
+    st.markdown("---")
+    st.markdown("**Or enter a session manually**")
+    st.caption("Enter results from a completed AI Gym Trainer session.")
     reps = st.number_input("Reps completed", min_value=0, value=12)
     duration = st.number_input("Session duration (seconds)", min_value=1, value=120)
     good_feedback_count = st.number_input("Number of 'Good rep!' feedbacks received", min_value=0, value=10)
@@ -230,5 +292,3 @@ if _sel == 5:
 # --- Admin Analytics ---
 if _sel == 6:
     render_admin_analytics(API_URL)
-
-# My History & Privacy now lives in the left menu (🗂 My History), so it is not repeated here.

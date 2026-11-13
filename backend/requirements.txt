@@ -96,3 +96,4 @@ plotly
 paho-mqtt
 bcrypt
 PyJWT
+streamlit-mic-recorder

@@ -1,0 +1,145 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:transparent;color:#f1f5ff}
+.wrap{max-width:760px;margin:0 auto}
+.stage{position:relative;width:100%;aspect-ratio:4/3;background:#070b14;border:1px solid rgba(255,255,255,.18);border-radius:16px;overflow:hidden}
+video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.mirror{transform:scaleX(-1)}
+.hud{position:absolute;left:10px;top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.pill{background:rgba(7,11,20,.72);border:1px solid rgba(255,255,255,.2);border-radius:12px;padding:6px 12px;font-size:13px}
+.pill b{font-size:22px;color:#c6ff3d;display:block;line-height:1.1}
+.msg{position:absolute;left:10px;right:10px;bottom:10px;background:rgba(7,11,20,.8);border-radius:12px;padding:8px 12px;font-size:15px;font-weight:700;text-align:center}
+.idle{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:#b4c2e0;font-size:15px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{flex:1;min-width:120px;border:0;border-radius:12px;padding:11px 12px;font-weight:700;font-size:14px;cursor:pointer;color:#0a1200;background:linear-gradient(135deg,#c6ff3d,#7dd957)}
+button.alt{background:#1b2742;color:#f1f5ff;border:1px solid rgba(255,255,255,.25)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.note{margin-top:8px;font-size:12px;color:#9aa8c7}
+</style></head><body><div class="wrap">
+<div class="stage" id="stage">
+  <video id="v" playsinline muted></video><canvas id="c"></canvas>
+  <div class="idle" id="idle">Press <b>&nbsp;Start camera&nbsp;</b> and allow the camera.<br>Stand about 2 metres back so your whole arm is visible.</div>
+  <div class="hud" id="hud" style="display:none">
+    <div class="pill">Reps<b id="reps">0</b></div><div class="pill">Stage<b id="st" style="font-size:16px">-</b></div>
+    <div class="pill">Time<b id="tm" style="font-size:16px">0:00</b></div></div>
+  <div class="msg" id="msg" style="display:none"></div>
+</div>
+<div class="row">
+  <button id="start">Start camera</button>
+  <button class="alt" id="flip" disabled>Switch camera</button>
+  <button class="alt" id="mute" disabled>Voice: on</button>
+  <button id="finish" disabled>Finish and analyze</button>
+</div>
+<div class="note">Bicep curls: curl up fully, lower fully. Video stays on your device; only the rep result is sent for scoring.</div>
+</div>
+<script src="counter.js"></script>
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
+const $ = id => document.getElementById(id);
+const send = (type, extra) => window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra || {}), "*");
+send("streamlit:componentReady", { apiVersion: 1 });
+send("streamlit:setFrameHeight", { height: 640 });
+
+const video = $("v"), canvas = $("c"), ctx = canvas.getContext("2d");
+const counter = new PoseCounter.Counter();
+let landmarker = null, stream = null, facing = "user", running = false, t0 = 0, voiceOn = true, lastSpoken = 0, lastWarn = 0, lastTs = -1;
+const cd = {};                                    // cooldowns for messages
+
+function say(text, urgent) {
+  const m = $("msg"); m.style.display = "block"; m.textContent = text;
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  const now = Date.now();
+  if (!urgent && speechSynthesis.speaking && now - lastSpoken < 2500) return;
+  if (urgent) speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.speak(u); lastSpoken = now;
+}
+function cool(key, ms) { const n = Date.now(); if (cd[key] && n - cd[key] < ms) return false; cd[key] = n; return true; }
+
+async function loadModel() {
+  if (landmarker) return;
+  const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  landmarker = await PoseLandmarker.createFromOptions(fs, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" },
+    runningMode: "VIDEO", numPoses: 1
+  });
+}
+async function openCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+  video.srcObject = stream; await video.play();
+  canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
+  const mir = facing === "user"; video.classList.toggle("mirror", mir); canvas.classList.toggle("mirror", mir);
+}
+async function start() {
+  $("start").disabled = true; $("start").textContent = "Loading...";
+  try {
+    await loadModel(); await openCamera();
+  } catch (e) {
+    $("start").disabled = false; $("start").textContent = "Start camera";
+    $("idle").innerHTML = "Could not start the camera.<br>" + (e && e.message ? e.message : e) + "<br>Allow camera access (lock icon in the address bar) and use Chrome or Edge.";
+    return;
+  }
+  $("idle").style.display = "none"; $("hud").style.display = "flex";
+  $("start").textContent = "Restart"; $("start").disabled = false;
+  $("flip").disabled = false; $("mute").disabled = false; $("finish").disabled = false;
+  counter.reset(); $("reps").textContent = 0; $("st").textContent = "-"; t0 = Date.now(); running = true; lastTs = -1;
+  say("Get ready. Curl when you are ready.", true);
+  requestAnimationFrame(loop);
+}
+function pt(l) { return { x: l.x * canvas.width, y: l.y * canvas.height, v: l.visibility == null ? 1 : l.visibility }; }
+const BONES = [[11,13],[13,15],[12,14],[14,16],[11,12],[11,23],[12,24],[23,24]];
+
+function loop() {
+  if (!running) return;
+  if (video.readyState >= 2) {
+    const ts = performance.now();
+    if (ts !== lastTs) {
+      lastTs = ts;
+      const res = landmarker.detectForVideo(video, ts);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const lm = res.landmarks && res.landmarks[0];
+      if (lm) handle(lm); else if (cool("lost", 6000)) say("I cannot see you. Step back a little.");
+    }
+  }
+  $("tm").textContent = Math.floor((Date.now() - t0) / 60000) + ":" + String(Math.floor((Date.now() - t0) / 1000) % 60).padStart(2, "0");
+  requestAnimationFrame(loop);
+}
+function handle(lm) {
+  ctx.lineWidth = 4; ctx.strokeStyle = "rgba(198,255,61,.9)";
+  for (const [a, b] of BONES) { const p = pt(lm[a]), q = pt(lm[b]); if (p.v > .4 && q.v > .4) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke(); } }
+  // use the arm that the camera sees best
+  const R = [12, 14, 16], L = [11, 13, 15];
+  const vis = s => (lm[s[0]].visibility + lm[s[1]].visibility + lm[s[2]].visibility) / 3;
+  const S = vis(R) >= vis(L) ? R : L;
+  const sh = pt(lm[S[0]]), el = pt(lm[S[1]]), wr = pt(lm[S[2]]);
+  if (Math.min(sh.v, el.v, wr.v) < 0.5) { if (cool("vis", 6000)) say("Step back so I can see your whole arm."); return; }
+  ctx.fillStyle = "#22d3ee"; for (const p of [sh, el, wr]) { ctx.beginPath(); ctx.arc(p.x, p.y, 7, 0, 6.283); ctx.fill(); }
+  const ang = PoseCounter.angle(sh, el, wr);
+  const armLen = Math.hypot(sh.x - el.x, sh.y - el.y) || 1;
+  const drifting = Math.abs(el.x - sh.x) / armLen > PoseCounter.DRIFT;
+  const ev = counter.update(ang, drifting);
+  $("st").textContent = counter.stage === "up" ? "UP" : counter.stage === "down" ? "DOWN" : "-";
+  for (const e of ev) {
+    if (e === "rep") {
+      $("reps").textContent = counter.reps;
+      const n = counter.reps;
+      if ([5, 10, 15, 20, 25, 30, 40, 50].includes(n)) say(n + " reps! Great job, keep going!", true);
+      else say(String(n), true);
+    } else if (e === "down") { if (counter.reps > 0 && cool("down", 1500)) say("Down"); }
+    else if (e === "drift") { if (cool("drift", 5000)) say("Keep your elbow close to your body."); }
+  }
+}
+$("start").onclick = start;
+$("flip").onclick = async () => { facing = facing === "user" ? "environment" : "user"; try { await openCamera(); } catch (e) { say("Could not switch camera."); } };
+$("mute").onclick = () => { voiceOn = !voiceOn; $("mute").textContent = "Voice: " + (voiceOn ? "on" : "off"); if (!voiceOn) speechSynthesis.cancel(); };
+$("finish").onclick = () => {
+  running = false; if (stream) stream.getTracks().forEach(t => t.stop());
+  speechSynthesis.cancel();
+  const dur = Math.max(1, Math.round((Date.now() - t0) / 1000));
+  const reps = counter.reps;
+  $("msg").style.display = "block"; $("msg").textContent = "Session finished: " + reps + " reps in " + dur + " s. Scroll down for your score.";
+  $("finish").disabled = true; $("flip").disabled = true; $("mute").disabled = true; $("start").textContent = "Start new session";
+  send("streamlit:setComponentValue", { dataType: "json", value: { finished: true, id: Date.now(), reps: reps, duration: dur, good: counter.good, total: Math.max(reps, 1) } });
+};
+</script></body></html>

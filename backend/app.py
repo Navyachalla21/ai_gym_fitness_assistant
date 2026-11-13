@@ -109,3 +109,5 @@ def recommend(req: RecommendRequest):
         "nearby_gyms": recommend_nearby_gyms(),
         "challenge": recommend_challenge(req.goal, req.current_streak_days)
     }
+from profile_routes import router as profile_router
+app.include_router(profile_router)

@@ -66,6 +66,8 @@ def require_login():
 
     if st.session_state.get("token"):
         render_sidebar(guest=False)
+        from profile_ui import profile_gate
+        profile_gate()          # asks new users for their basic details; shows the profile page
         return
     if st.session_state.get("guest"):
         render_sidebar(guest=True)
