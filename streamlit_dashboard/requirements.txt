@@ -1,3 +1,5 @@
 ﻿plotly
 requests
 pandas
+
+streamlit-mic-recorder
