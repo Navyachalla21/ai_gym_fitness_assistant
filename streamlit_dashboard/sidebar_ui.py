@@ -76,7 +76,7 @@ requestAnimationFrame(frame);
 
 
 MODULE_NAMES = ["🥗 Diet Coach", "📊 Behavior Risk", "💬 Gym Buddy", "⌚ Smart Gym",
-                "🎯 Recommendations", "📈 Session Performance", "🛠️ Admin Analytics"]
+                "🎯 Recommendations", "📈 Session Performance"]
 
 _READABLE_CSS = """
 <style>
@@ -136,17 +136,17 @@ def _pick(i: int):
 
 
 def _logout():
-    for key in ("token", "user", "guest", "view", "module", "profile", "profile_checked", "profile_skip", "member_id"):
+    for key in ("token", "user", "guest", "view", "module", "profile", "profile_checked", "profile_skip", "member_id", "auth_page", "auth_mode"):
         st.session_state.pop(key, None)
 
 
 def _leave_guest():
-    for key in ("guest", "view", "module"):
+    for key in ("guest", "view", "module", "auth_page"):
         st.session_state.pop(key, None)
 
 
 def render_sidebar(guest: bool = False):
-    """Welcome + quote, then Dashboard (7 core modules), My History, How to use, Log out."""
+    """Welcome + quote, then Dashboard (6 core modules), My History, How to use, Log out."""
     apply_readable_css()
     view = st.session_state.get("view", "dashboard")
     current = st.session_state.get("module", 0)
@@ -188,7 +188,7 @@ def render_guide():
     st.subheader("Quick start")
     st.markdown("""
 1. **Create an account** (or log in). Your data is private to your account.
-2. Open **🏠 Dashboard** in the left menu. It lists the **7 core modules**. Click one to open it.
+2. Open **🏠 Dashboard** in the left menu. It lists the **6 core modules**. Click one to open it.
 3. Fill in the fields and press the button in that module.
 4. Everything you save is remembered. Open **🗂 My History** in the left menu to see it, or delete it.
 5. Use **Log out** at the bottom of the left menu when you finish.
@@ -236,7 +236,7 @@ Each check is saved, so your risk history appears in **My History**.
 1. Type a message, for example how you feel today or what you want to train.
 2. Press **Send**. The buddy replies and shows the **detected mood** (positive, neutral or negative).
 3. If you feel low, it suggests one tiny step. If you feel great, it keeps your momentum going.
-4. Your chats are saved. The **mood trend** appears in Admin Analytics, and the messages in **My History**.
+4. Your chats are saved. The messages are saved in **My History**.
 """)
 
     with st.expander("⌚ Smart Gym (equipment and heart rate)"):
@@ -269,30 +269,13 @@ For a demo with data, run `python ai_modules/iot_simulator.py` on your computer.
         st.markdown("""
 **What it does:** scores a finished workout from your reps, pace and form.
 
-**Step 1: do the workout with the AI Trainer** (on a computer with a webcam)
-1. Run the trainer: `python ai_modules/pose_detector.py`.
-2. Stand where the camera can see your whole body and do your reps.
-3. The trainer counts reps, checks your form and can coach you by voice.
-
-**Step 2: score it here**
-1. Enter **reps completed** and **session duration** in seconds.
-2. Enter how many **'Good rep!'** feedbacks you received and the **total feedback events**.
-3. Press **Analyze Session**. You get a **performance score**, **form quality %** and a **rating**.
+**How to use it**
+1. Open **Session Performance** and press **Start camera**. Allow the camera (laptop webcam or phone).
+2. Stand about 2 metres back so your whole arm is visible, then do bicep curls. The trainer counts reps, checks your form and coaches you by voice.
+3. Use **Minimize camera** to shrink the video while you work out, and **Maximize camera** to enlarge it again.
+4. Press **Stop camera and show result**. Your **performance score**, **form quality %** and **rating** appear automatically.
 
 Each session is saved and feeds your weekly report and level detection.
-""")
-
-    with st.expander("🛠️ Admin Analytics (charts and weekly report)"):
-        st.markdown("""
-**What it does:** shows your progress as charts.
-
-**How to use it**
-1. Choose the **period** (7, 14, 30 or 90 days).
-2. Read the headline numbers: sessions, total reps, average score and recent mood.
-3. Explore the **weekly report**, sessions per week, performance and form quality, skip-risk distribution and mood over time.
-4. Open **Raw data** to see the underlying records.
-
-The charts fill up as you use the other tabs. Logged-in users always see their own data.
 """)
 
     with st.expander("🗂 My History and privacy"):

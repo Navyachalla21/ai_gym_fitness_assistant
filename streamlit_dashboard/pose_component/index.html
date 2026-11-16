@@ -15,6 +15,10 @@ video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 button{flex:1;min-width:120px;border:0;border-radius:12px;padding:11px 12px;font-weight:700;font-size:14px;cursor:pointer;color:#0a1200;background:linear-gradient(135deg,#c6ff3d,#7dd957)}
 button.alt{background:#1b2742;color:#f1f5ff;border:1px solid rgba(255,255,255,.25)}
 button:disabled{opacity:.45;cursor:not-allowed}
+.wrap.mini .stage{width:210px;margin:0}
+.wrap.mini .hud{left:6px;top:6px;gap:4px}.wrap.mini .pill{padding:3px 7px;font-size:10px}.wrap.mini .pill b{font-size:15px}
+.wrap.mini .msg,.wrap.mini .idle,.wrap.mini .note{display:none !important}
+.wrap.mini .row button{min-width:90px;padding:9px 8px;font-size:13px}
 .note{margin-top:8px;font-size:12px;color:#9aa8c7}
 </style></head><body><div class="wrap">
 <div class="stage" id="stage">
@@ -27,9 +31,10 @@ button:disabled{opacity:.45;cursor:not-allowed}
 </div>
 <div class="row">
   <button id="start">Start camera</button>
+  <button class="alt" id="size">Minimize camera</button>
   <button class="alt" id="flip" disabled>Switch camera</button>
   <button class="alt" id="mute" disabled>Voice: on</button>
-  <button id="finish" disabled>Finish and analyze</button>
+  <button id="finish" disabled>Stop camera and show result</button>
 </div>
 <div class="note">Bicep curls: curl up fully, lower fully. Video stays on your device; only the rep result is sent for scoring.</div>
 </div>
@@ -67,7 +72,9 @@ async function loadModel() {
 async function openCamera() {
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-  video.srcObject = stream; await video.play();
+  video.srcObject = stream;
+  stream.getTracks().forEach(tr => tr.addEventListener("ended", () => { if (running) finishSession(); }));
+  await video.play();
   canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
   const mir = facing === "user"; video.classList.toggle("mirror", mir); canvas.classList.toggle("mirror", mir);
 }
@@ -130,16 +137,24 @@ function handle(lm) {
     else if (e === "drift") { if (cool("drift", 5000)) say("Keep your elbow close to your body."); }
   }
 }
+let mini = false;
+$("size").onclick = () => {
+  mini = !mini; document.querySelector(".wrap").classList.toggle("mini", mini);
+  $("size").textContent = mini ? "Maximize camera" : "Minimize camera";
+  send("streamlit:setFrameHeight", { height: mini ? 330 : 640 });
+};
 $("start").onclick = start;
 $("flip").onclick = async () => { facing = facing === "user" ? "environment" : "user"; try { await openCamera(); } catch (e) { say("Could not switch camera."); } };
 $("mute").onclick = () => { voiceOn = !voiceOn; $("mute").textContent = "Voice: " + (voiceOn ? "on" : "off"); if (!voiceOn) speechSynthesis.cancel(); };
-$("finish").onclick = () => {
+function finishSession() {
+  if (!running) return;
   running = false; if (stream) stream.getTracks().forEach(t => t.stop());
   speechSynthesis.cancel();
   const dur = Math.max(1, Math.round((Date.now() - t0) / 1000));
   const reps = counter.reps;
-  $("msg").style.display = "block"; $("msg").textContent = "Session finished: " + reps + " reps in " + dur + " s. Scroll down for your score.";
+  $("msg").style.display = "block"; $("msg").textContent = "Camera off. " + reps + " reps in " + dur + " s. Your result is shown below.";
   $("finish").disabled = true; $("flip").disabled = true; $("mute").disabled = true; $("start").textContent = "Start new session";
   send("streamlit:setComponentValue", { dataType: "json", value: { finished: true, id: Date.now(), reps: reps, duration: dur, good: counter.good, total: Math.max(reps, 1) } });
-};
+}
+$("finish").onclick = finishSession;
 </script></body></html>

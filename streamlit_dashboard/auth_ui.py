@@ -45,11 +45,17 @@ def _ecg_url(color: str) -> str:
     return "data:image/svg+xml;base64," + base64.b64encode((_ECG_SVG % color).encode()).decode()
 
 
-def _login_background() -> str:
+def _login_background(card: bool = True) -> str:
     """Full-page running background for the login screen (CSS only, no iframe).
     Put a clip at streamlit_dashboard/assets/login.mp4 (under 6 MB) to play it instead."""
     from sidebar_ui import _video_tag
     clip = _video_tag(os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "login.mp4"))
+    card_css = """
+[data-testid="stColumn"]:nth-child(2), [data-testid="column"]:nth-child(2) {
+    background:rgba(8,14,30,.80); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,.18); border-radius:22px; padding:26px 28px !important;
+    box-shadow:0 20px 60px rgba(0,0,0,.55); }
+""" if card else ""
     return f"""
 <style>
 .stApp {{ background:#050a16 !important; }}
@@ -70,11 +76,22 @@ header[data-testid="stHeader"] {{ background:transparent !important; }}
 .login-bg .tag b {{ color:#c6ff3d; }}
 @keyframes ecgmove {{ from {{ background-position-x:0; }} to {{ background-position-x:-700px; }} }}
 @keyframes orbfloat {{ from {{ transform:translate(0,0); }} to {{ transform:translate(60px,-50px); }} }}
-/* the login card in the middle */
-[data-testid="stColumn"]:nth-child(2), [data-testid="column"]:nth-child(2) {{
-    background:rgba(8,14,30,.80); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-    border:1px solid rgba(255,255,255,.18); border-radius:22px; padding:26px 28px !important;
-    box-shadow:0 20px 60px rgba(0,0,0,.55); }}
+{card_css}
+
+.lp-hero {{ text-align:center; padding:4vh 0 2vh; }}
+.lp-hero h1 {{ font-size:clamp(34px,6vw,58px); font-weight:800; line-height:1.1; margin:0 0 14px; }}
+.lp-hero h1 span {{ color:#c6ff3d; }}
+.lp-hero p {{ font-size:clamp(16px,2.2vw,20px); color:#d6e0f5; max-width:760px; margin:0 auto 10px; }}
+.lp-h2 {{ text-align:center; font-size:28px; font-weight:800; margin:44px 0 6px; color:#fff; }}
+.lp-sub {{ text-align:center; color:#b4c2e0; margin-bottom:18px; }}
+.lp-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }}
+.lp-card {{ background:rgba(8,14,30,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.16); border-radius:18px; padding:20px; }}
+.lp-card .ic {{ font-size:30px; }} .lp-card h3 {{ margin:8px 0 6px; font-size:19px; color:#fff; }}
+.lp-card p {{ margin:0; color:#c9d5ee; font-size:15px; line-height:1.5; }}
+.lp-step b {{ display:inline-block; width:34px; height:34px; line-height:34px; text-align:center; border-radius:50%;
+    background:linear-gradient(135deg,#c6ff3d,#7dd957); color:#0a1200; margin-bottom:8px; }}
+.lp-cta {{ text-align:center; margin:40px 0 10px; font-size:26px; font-weight:800; }}
 .login-title {{ font-size:28px; font-weight:800; color:#fff; line-height:1.2; margin-bottom:6px; }}
 .login-sub {{ color:#b4c2e0; font-size:14px; margin-bottom:14px; }}
 </style>
@@ -130,6 +147,61 @@ def _sign_in(path: str, payload: dict):
         st.error(_detail(res))
 
 
+def _landing():
+    """First page for visitors: what the app is, what it offers, and a Get started button."""
+    from sidebar_ui import apply_readable_css
+    apply_readable_css()
+    st.markdown(_login_background(card=False), unsafe_allow_html=True)
+    st.markdown(
+        "<div class='lp-hero'><h1>Train smarter. Eat better.<br><span>Stay consistent.</span></h1>"
+        "<p>AI Gym &amp; Fitness Assistant is your personal AI coach. It plans your diet, watches your form through your "
+        "camera, chats like a workout buddy and warns you before you skip workouts.</p></div>",
+        unsafe_allow_html=True)
+    _a, c1, c2, _b = st.columns([1.2, 1.4, 1.4, 1.2])
+    if c1.button("🚀 Get started: create account", use_container_width=True, key="lp_start"):
+        st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "register"; st.rerun()
+    if c2.button("Log in", use_container_width=True, key="lp_login"):
+        st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "login"; st.rerun()
+
+    st.markdown(
+        "<div class='lp-h2'>Why fitness and diet go together</div>"
+        "<div class='lp-sub'>Results come from small habits repeated every week.</div>"
+        "<div class='lp-grid'>"
+        "<div class='lp-card'><div class='ic'>🏋️</div><h3>Fitness</h3><p>Regular strength and cardio sessions build muscle, "
+        "protect your heart, improve sleep and lift your mood. Good form keeps you injury free.</p></div>"
+        "<div class='lp-card'><div class='ic'>🥗</div><h3>Diet</h3><p>Your body is built in the kitchen. The right calories, "
+        "protein and balance for your goal (loss, gain or endurance) make every workout count.</p></div>"
+        "<div class='lp-card'><div class='ic'>🔁</div><h3>Consistency</h3><p>The best plan is the one you follow. Tracking, "
+        "reminders and a friendly buddy help you show up even on low days.</p></div></div>",
+        unsafe_allow_html=True)
+
+    st.markdown(
+        "<div class='lp-h2'>What this app gives you</div>"
+        "<div class='lp-sub'>Six AI tools in one dashboard.</div>"
+        "<div class='lp-grid'>"
+        "<div class='lp-card'><div class='ic'>🥗</div><h3>Diet Coach</h3><p>BMI, calorie guidance and an AI meal plan for your goal, plus a meal tracker.</p></div>"
+        "<div class='lp-card'><div class='ic'>📊</div><h3>Behavior Risk</h3><p>Predicts if you are likely to skip workouts and suggests how to stay on track.</p></div>"
+        "<div class='lp-card'><div class='ic'>💬</div><h3>Gym Buddy</h3><p>Chat or talk to an AI partner that understands your mood and replies in voice.</p></div>"
+        "<div class='lp-card'><div class='ic'>⌚</div><h3>Smart Gym</h3><p>Heart-rate zones and recommended resistance and rest from equipment data.</p></div>"
+        "<div class='lp-card'><div class='ic'>🎯</div><h3>Recommendations</h3><p>Workout programs, nearby gyms and challenges matched to your level.</p></div>"
+        "<div class='lp-card'><div class='ic'>📈</div><h3>Live AI Trainer</h3><p>Use your laptop or phone camera. It counts reps, checks form and scores your session.</p></div>"
+        "</div>", unsafe_allow_html=True)
+
+    st.markdown(
+        "<div class='lp-h2'>How it works</div><div class='lp-sub'>Ready in a minute.</div>"
+        "<div class='lp-grid'>"
+        "<div class='lp-card lp-step'><b>1</b><h3>Create your account</h3><p>Pick a username and a strong password, then add your basic details.</p></div>"
+        "<div class='lp-card lp-step'><b>2</b><h3>Explore the tools</h3><p>Open any module from the Dashboard menu on the left.</p></div>"
+        "<div class='lp-card lp-step'><b>3</b><h3>Track your progress</h3><p>Everything you do is saved privately in My History.</p></div></div>"
+        "<div class='lp-cta'>Ready to explore? Let's get started.</div>", unsafe_allow_html=True)
+    _a, c3, c4, _b = st.columns([1.2, 1.4, 1.4, 1.2])
+    if c3.button("🚀 Create my account", use_container_width=True, key="lp_start2"):
+        st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "register"; st.rerun()
+    if c4.button("Continue as guest", use_container_width=True, key="lp_guest"):
+        st.session_state["guest"] = True; st.session_state["view"] = "dashboard"; st.rerun()
+    st.stop()
+
+
 def require_login():
     """Shows the login/register screen until the user signs in (or continues as guest).
     When signed in, draws the left sidebar (welcome, quote, clip, menu, log out)."""
@@ -145,15 +217,20 @@ def require_login():
         render_sidebar(guest=True)
         return
 
-    from sidebar_ui import apply_readable_css, _video_tag
+    if st.session_state.get("auth_page", "landing") == "landing":
+        _landing()
+    from sidebar_ui import apply_readable_css
     apply_readable_css()
-    st.markdown(_login_background(), unsafe_allow_html=True)
+    st.markdown(_login_background(card=True), unsafe_allow_html=True)
     _l, mid, _r = st.columns([1, 1.25, 1])
     with mid:
         st.markdown("<div class='login-title'>🏋️ AI Gym &amp; Fitness Assistant</div>"
                     "<div class='login-sub'>Log in to keep your own history. Your data stays private to your account.</div>",
                     unsafe_allow_html=True)
-        login_tab, register_tab = st.tabs(["Log in", "Create account"])
+        if st.session_state.get("auth_mode") == "register":
+            register_tab, login_tab = st.tabs(["Create account", "Log in"])
+        else:
+            login_tab, register_tab = st.tabs(["Log in", "Create account"])
         with login_tab:
             with st.form("login_form"):
                 u = st.text_input("Username")
@@ -176,6 +253,9 @@ def require_login():
         if st.button("Continue as guest", use_container_width=True):
             st.session_state["guest"] = True
             st.session_state["view"] = "dashboard"
+            st.rerun()
+        if st.button("← Back to home", use_container_width=True, key="back_home"):
+            st.session_state["auth_page"] = "landing"
             st.rerun()
     st.stop()
 

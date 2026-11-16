@@ -5,7 +5,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 import requests
 from streamlit_mic_recorder import speech_to_text
-from admin_analytics import render_admin_analytics
 from nutrition_ui import render_nutrition_tracker
 from auth_ui import require_login, render_history_page
 from sidebar_ui import render_guide, render_clip_row
@@ -278,7 +277,3 @@ if _sel == 5:
             _c3.metric("Rating", _data["rating"])
         else:
             st.error(f"Error: {_txt}")
-
-# --- Admin Analytics ---
-if _sel == 6:
-    render_admin_analytics(API_URL)
