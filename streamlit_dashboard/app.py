@@ -98,6 +98,7 @@ if _sel == 1:
 # --- Gym Buddy Chat ---
 if _sel == 2:
     st.subheader("Virtual Gym Buddy")
+    st.caption("Your AI workout partner. Type a message, or tap 🎤 and talk. Turn on 🔊 to hear the replies.")
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -111,27 +112,37 @@ if _sel == 2:
         else:
             st.error(f"Error: {res.text}")
 
-    # one bar: text box + microphone + speaker toggle + Send
-    c_text, c_mic, c_spk, c_send = st.columns([8, 1.4, 1.2, 1.4], vertical_alignment="bottom")
-    user_msg = c_text.text_input("Message", key="buddy_input", label_visibility="collapsed",
-                                 placeholder="Type here, or tap 🎤 and talk to your gym buddy...")
-    with c_mic:
-        spoken = speech_to_text(language="en", start_prompt="🎤", stop_prompt="⏹",
-                                just_once=True, use_container_width=True, key="buddy_voice")
-    speak_on = c_spk.toggle("🔊", key="buddy_speak", help="Read the buddy's replies aloud")
-    send_clicked = c_send.button("Send", use_container_width=True)
+    chat_area = st.container()        # the conversation is drawn here, above the message bar
+
+    with st.container(border=True):   # message bar: text box + mic + speaker + send
+        c_text, c_mic, c_spk, c_send = st.columns([8, 1.5, 1.3, 1.6], vertical_alignment="center")
+        user_msg = c_text.text_input("Message", key="buddy_input", label_visibility="collapsed",
+                                     placeholder="Message your gym buddy...")
+        with c_mic:
+            spoken = speech_to_text(language="en", start_prompt="🎤 Talk", stop_prompt="⏹ Stop",
+                                    just_once=True, use_container_width=True, key="buddy_voice")
+        speak_on = c_spk.toggle("🔊", key="buddy_speak", help="Read the buddy's replies aloud")
+        send_clicked = c_send.button("Send ➤", use_container_width=True)
 
     if spoken:
-        st.caption(f'You said: "{spoken}"')
         _send_to_buddy(spoken)
     elif send_clicked and user_msg:
         _send_to_buddy(user_msg)
 
-    for sender, msg, sentiment in st.session_state.chat_history:
-        if sender == "You":
-            st.write(f"**You:** {msg}")
-        else:
-            st.write(f"**Buddy** _(detected mood: {sentiment})_: {msg}")
+    with chat_area:
+        if not st.session_state.chat_history:
+            st.info("👋 Say hello! Tell your buddy how you feel today, or ask for a quick workout tip.")
+        for sender, msg, sentiment in st.session_state.chat_history:
+            if sender == "You":
+                with st.chat_message("user", avatar="🧑"):
+                    st.write(msg)
+            else:
+                with st.chat_message("assistant", avatar="🏋️"):
+                    st.write(msg)
+                    st.caption(f"Detected mood: {sentiment}")
+        if st.session_state.chat_history and st.button("Clear chat", key="buddy_clear"):
+            st.session_state.chat_history = []
+            st.rerun()
 
     to_speak = st.session_state.pop("speak_text", None)
     if speak_on and to_speak:
@@ -247,7 +258,7 @@ if _sel == 5:
     st.subheader("Pose-to-Performance Analyzer")
     st.markdown("### 📷 Live AI Trainer (laptop webcam or phone camera)")
     st.caption("Press Start camera, allow the camera, and do bicep curls. The trainer counts your reps, "
-               "checks your elbow and speaks to you. Press Finish and analyze to get your score.")
+               "checks your elbow and speaks to you. When you stop the camera, your score appears below.")
     live = pose_trainer(key="live_trainer")
     if live and live.get("finished") and st.session_state.get("last_live_id") != live["id"]:
         st.session_state["last_live_id"] = live["id"]
@@ -267,27 +278,6 @@ if _sel == 5:
             _c3.metric("Rating", _data["rating"])
         else:
             st.error(f"Error: {_txt}")
-    st.markdown("---")
-    st.markdown("**Or enter a session manually**")
-    st.caption("Enter results from a completed AI Gym Trainer session.")
-    reps = st.number_input("Reps completed", min_value=0, value=12)
-    duration = st.number_input("Session duration (seconds)", min_value=1, value=120)
-    good_feedback_count = st.number_input("Number of 'Good rep!' feedbacks received", min_value=0, value=10)
-    total_feedback_count = st.number_input("Total feedback events", min_value=1, value=12)
-
-    if st.button("Analyze Session"):
-        feedback_list = ["Good rep!"] * good_feedback_count + ["Adjust form"] * (total_feedback_count - good_feedback_count)
-        res = requests.post(f"{API_URL}/api/analyze-session", json={
-            "reps": reps, "duration_seconds": duration, "form_feedback_list": feedback_list
-        })
-        if res.status_code == 200:
-            data = res.json()
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Performance Score", data["performance_score"])
-            col2.metric("Form Quality", f"{data['form_quality_pct']}%")
-            col3.metric("Rating", data["rating"])
-        else:
-            st.error(f"Error: {res.text}")
 
 # --- Admin Analytics ---
 if _sel == 6:

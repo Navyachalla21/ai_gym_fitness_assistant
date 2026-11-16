@@ -1,5 +1,6 @@
 """Login routes. Other routes use `current_user` / `optional_user` to find out who is calling."""
 import os
+import re
 import sys
 from typing import Optional
 
@@ -28,6 +29,26 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., max_length=30)
     password: str = Field(..., max_length=72)
+
+
+def password_problems(password: str, username: str = "") -> list:
+    """Strong-password rules. Returns what is wrong (empty list = the password is fine)."""
+    problems = []
+    if len(password) < 8:
+        problems.append("at least 8 characters")
+    if not password[:1].isupper():
+        problems.append("the first character must be an uppercase letter")
+    if not re.search(r"[A-Z]", password):
+        problems.append("an uppercase letter")
+    if not re.search(r"[a-z]", password):
+        problems.append("a lowercase letter")
+    if not re.search(r"[0-9]", password):
+        problems.append("a digit")
+    if not re.search(r"[^A-Za-z0-9]", password):
+        problems.append("a special character such as @ # $ % ! ?")
+    if username and len(username) >= 3 and username.lower() in password.lower():
+        problems.append("it must not contain your username")
+    return problems
 
 
 def current_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
@@ -60,6 +81,9 @@ def resolve_user(logged_in: Optional[str], requested: str = "default") -> str:
 
 @router.post("/register")
 def register(req: RegisterRequest):
+    problems = password_problems(req.password, req.username)
+    if problems:
+        raise HTTPException(status_code=400, detail="Weak password. It needs: " + "; ".join(problems) + ".")
     try:
         user = auth.create_user(req.username, req.password, req.display_name)
     except ValueError as exc:
