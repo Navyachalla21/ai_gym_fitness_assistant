@@ -273,7 +273,7 @@ For a demo with data, run `python ai_modules/iot_simulator.py` on your computer.
 1. Open **Session Performance** and press **Start camera**. Allow the camera (laptop webcam or phone).
 2. Stand about 2 metres back so your whole arm is visible, then do bicep curls. The trainer counts reps, checks your form and coaches you by voice.
 3. Use **Minimize camera** to shrink the video while you work out, and **Maximize camera** to enlarge it again.
-4. Press **Stop camera and show result**. Your **performance score**, **form quality %** and **rating** appear automatically.
+4. Press **Maximize camera** for a full-screen view. Press **Stop camera** when you finish, then **Show result** to see your **performance score**, **form quality %** and **rating**.
 
 Each session is saved and feeds your weekly report and level detection.
 """)

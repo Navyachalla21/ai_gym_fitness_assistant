@@ -19,6 +19,9 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .wrap.mini .hud{left:6px;top:6px;gap:4px}.wrap.mini .pill{padding:3px 7px;font-size:10px}.wrap.mini .pill b{font-size:15px}
 .wrap.mini .msg,.wrap.mini .idle,.wrap.mini .note{display:none !important}
 .wrap.mini .row button{min-width:90px;padding:9px 8px;font-size:13px}
+.wrap:fullscreen{max-width:none;width:100vw;height:100vh;background:#070b14;padding:8px;display:flex;flex-direction:column}
+.wrap:fullscreen .stage{flex:1;aspect-ratio:auto;border-radius:12px}
+.wrap:fullscreen .note{display:none}
 .note{margin-top:8px;font-size:12px;color:#9aa8c7}
 </style></head><body><div class="wrap">
 <div class="stage" id="stage">
@@ -34,7 +37,8 @@ button:disabled{opacity:.45;cursor:not-allowed}
   <button class="alt" id="size">Minimize camera</button>
   <button class="alt" id="flip" disabled>Switch camera</button>
   <button class="alt" id="mute" disabled>Voice: on</button>
-  <button id="finish" disabled>Stop camera and show result</button>
+  <button class="alt" id="finish" disabled>Stop camera</button>
+  <button id="result" disabled>Show result</button>
 </div>
 <div class="note">Bicep curls: curl up fully, lower fully. Video stays on your device; only the rep result is sent for scoring.</div>
 </div>
@@ -73,7 +77,7 @@ async function openCamera() {
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
   video.srcObject = stream;
-  stream.getTracks().forEach(tr => tr.addEventListener("ended", () => { if (running) finishSession(); }));
+  stream.getTracks().forEach(tr => tr.addEventListener("ended", () => { if (running) stopCamera(); }));
   await video.play();
   canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
   const mir = facing === "user"; video.classList.toggle("mirror", mir); canvas.classList.toggle("mirror", mir);
@@ -90,7 +94,7 @@ async function start() {
   $("idle").style.display = "none"; $("hud").style.display = "flex";
   $("start").textContent = "Restart"; $("start").disabled = false;
   $("flip").disabled = false; $("mute").disabled = false; $("finish").disabled = false;
-  counter.reset(); $("reps").textContent = 0; $("st").textContent = "-"; t0 = Date.now(); running = true; lastTs = -1;
+  pending = null; $("result").disabled = true; counter.reset(); $("reps").textContent = 0; $("st").textContent = "-"; t0 = Date.now(); running = true; lastTs = -1;
   say("Get ready. Curl when you are ready.", true);
   requestAnimationFrame(loop);
 }
@@ -138,23 +142,44 @@ function handle(lm) {
   }
 }
 let mini = false;
-$("size").onclick = () => {
-  mini = !mini; document.querySelector(".wrap").classList.toggle("mini", mini);
+const wrap = document.querySelector(".wrap");
+function setMini(v) {
+  mini = v; wrap.classList.toggle("mini", mini);
   $("size").textContent = mini ? "Maximize camera" : "Minimize camera";
   send("streamlit:setFrameHeight", { height: mini ? 330 : 640 });
+}
+$("size").onclick = async () => {
+  if (mini) {                                  // Maximize: take the whole screen
+    setMini(false);
+    try { await (wrap.requestFullscreen ? wrap.requestFullscreen() : wrap.webkitRequestFullscreen()); }
+    catch (e) { say("Full screen is not allowed here. Showing the large view."); }
+  } else {                                     // Minimize
+    if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} }
+    setMini(true);
+  }
 };
 $("start").onclick = start;
 $("flip").onclick = async () => { facing = facing === "user" ? "environment" : "user"; try { await openCamera(); } catch (e) { say("Could not switch camera."); } };
 $("mute").onclick = () => { voiceOn = !voiceOn; $("mute").textContent = "Voice: " + (voiceOn ? "on" : "off"); if (!voiceOn) speechSynthesis.cancel(); };
-function finishSession() {
+let pending = null;
+function stopCamera() {
   if (!running) return;
   running = false; if (stream) stream.getTracks().forEach(t => t.stop());
   speechSynthesis.cancel();
+  if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) {} }
   const dur = Math.max(1, Math.round((Date.now() - t0) / 1000));
   const reps = counter.reps;
-  $("msg").style.display = "block"; $("msg").textContent = "Camera off. " + reps + " reps in " + dur + " s. Your result is shown below.";
-  $("finish").disabled = true; $("flip").disabled = true; $("mute").disabled = true; $("start").textContent = "Start new session";
-  send("streamlit:setComponentValue", { dataType: "json", value: { finished: true, id: Date.now(), reps: reps, duration: dur, good: counter.good, total: Math.max(reps, 1) } });
+  pending = { finished: true, id: Date.now(), reps: reps, duration: dur, good: counter.good, total: Math.max(reps, 1) };
+  $("msg").style.display = "block"; $("msg").textContent = "Camera off. " + reps + " reps in " + dur + " s. Press Show result.";
+  $("finish").disabled = true; $("flip").disabled = true; $("mute").disabled = true;
+  $("result").disabled = false; $("start").textContent = "Start new session";
 }
-$("finish").onclick = finishSession;
+function showResult() {
+  if (!pending) return;
+  send("streamlit:setComponentValue", { dataType: "json", value: pending });
+  pending = null; $("result").disabled = true;
+  $("msg").textContent = "Result sent. Scroll down to see your score.";
+}
+$("finish").onclick = stopCamera;
+$("result").onclick = showResult;
 </script></body></html>

@@ -257,7 +257,7 @@ if _sel == 5:
     st.subheader("Pose-to-Performance Analyzer")
     st.markdown("### 📷 Live AI Trainer (laptop webcam or phone camera)")
     st.caption("Press Start camera, allow the camera, and do bicep curls. The trainer counts your reps, "
-               "checks your elbow and speaks to you. When you stop the camera, your score appears below.")
+               "checks your elbow and speaks to you. Press Stop camera, then Show result, and your score appears below.")
     live = pose_trainer(key="live_trainer")
     if live and live.get("finished") and st.session_state.get("last_live_id") != live["id"]:
         st.session_state["last_live_id"] = live["id"]
