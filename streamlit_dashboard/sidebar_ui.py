@@ -136,7 +136,7 @@ def _pick(i: int):
 
 
 def _logout():
-    for key in ("token", "user", "guest", "view", "module", "profile", "profile_checked", "profile_skip", "member_id", "auth_page", "auth_mode"):
+    for key in ("token", "user", "guest", "view", "module", "profile", "profile_checked", "profile_skip", "member_id", "auth_page", "auth_mode", "is_admin"):
         st.session_state.pop(key, None)
 
 
@@ -163,11 +163,18 @@ def render_sidebar(guest: bool = False):
         st.markdown(f"*“{quote_of_the_day()}”*")
         st.divider()
 
-        with st.expander("🏠 Dashboard", expanded=(view == "dashboard")):
+        admin = bool(st.session_state.get("is_admin"))
+        if admin:
+            st.caption("Administrator")
+            st.button("📊 Admin Analytics", width="stretch", disabled=True)
+            st.divider()
+            st.button("Log out", on_click=_logout, width="stretch")
+            return
+        with st.expander("🏠 User Dashboard" if admin else "🏠 Dashboard", expanded=(view == "dashboard")):
             for i, label in enumerate(MODULE_NAMES):
                 st.button(label, key=f"mod_{i}", on_click=_pick, args=(i,), width="stretch",
                           disabled=(view == "dashboard" and current == i))
-        if not guest:
+        if not guest and not admin:
             st.button("👤 My Profile", on_click=_go, args=("profile",), width="stretch", disabled=(view == "profile"))
             st.button("🗂 My History", on_click=_go, args=("history",), width="stretch", disabled=(view == "history"))
         st.button("📖 User manual", on_click=_go, args=("guide",), width="stretch", disabled=(view == "guide"))

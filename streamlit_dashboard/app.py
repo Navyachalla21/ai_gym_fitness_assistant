@@ -18,6 +18,10 @@ inject_css()             # neon dark look: lime buttons, pill tabs, metric cards
 require_login()          # login screen, sidebar, first-login profile setup and the My Profile page
 st.title("🏋️ AI Gym & Fitness Assistant — Dashboard")
 
+if st.session_state.get("is_admin"):
+    from admin_ui import render_admin_users
+    render_admin_users(API_URL)
+    st.stop()
 _view = st.session_state.get("view", "dashboard")
 if _view == "history":
     st.subheader("🗂 My History & Privacy")
@@ -97,7 +101,7 @@ if _sel == 1:
 # --- Gym Buddy Chat ---
 if _sel == 2:
     st.subheader("Virtual Gym Buddy")
-    st.caption("Your AI workout partner. Type a message, or tap 🎤 and talk. Turn on 🔊 to hear the replies.")
+    st.caption("Your AI workout partner. Type a message, or tap 🎤 and talk. Tap the speaker icon in the bar to hear the replies.")
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -111,22 +115,47 @@ if _sel == 2:
         else:
             st.error(f"Error: {res.text}")
 
-    chat_area = st.container()        # the conversation is drawn here, above the message bar
+    st.markdown("""
+<style>
+/* one rounded chat bar: text box, mic, speaker and send all sit inside it */
+.st-key-buddy_bar { border-radius:30px !important; background:rgba(15,23,41,.92) !important; padding:4px 10px !important; }
+.st-key-buddy_bar [data-baseweb="input"], .st-key-buddy_bar [data-baseweb="base-input"],
+.st-key-buddy_bar input { background:transparent !important; border:none !important; box-shadow:none !important; }
+.st-key-buddy_bar input { font-size:16px !important; color:#fff !important; }
+.st-key-buddy_bar .stButton > button { background:transparent !important; border:none !important; box-shadow:none !important;
+    min-height:44px; border-radius:50% !important; }
+.st-key-buddy_bar .stButton > button p { color:#fff !important; font-size:24px !important; }
+.st-key-buddy_spk_on button { background:rgba(198,255,61,.30) !important; }
+.st-key-buddy_send button { background:linear-gradient(135deg,#c6ff3d,#7dd957) !important; }
+.st-key-buddy_send button p { color:#0a1200 !important; }
+</style>
+""", unsafe_allow_html=True)
 
-    with st.container(border=True):   # message bar: text box + mic + speaker + send
-        c_text, c_mic, c_spk, c_send = st.columns([8, 1.5, 1.3, 1.6], vertical_alignment="center")
-        user_msg = c_text.text_input("Message", key="buddy_input", label_visibility="collapsed",
-                                     placeholder="Message your gym buddy...")
+    def _on_send():
+        m = (st.session_state.get("buddy_input") or "").strip()
+        if m:
+            _send_to_buddy(m)
+            st.session_state["buddy_input"] = ""
+
+    def _toggle_speak():
+        st.session_state["buddy_speak"] = not st.session_state.get("buddy_speak", False)
+
+    chat_area = st.container()        # the conversation is drawn here, above the chat bar
+    speak_on = st.session_state.get("buddy_speak", False)
+
+    with st.container(border=True, key="buddy_bar"):   # chat bar: text + mic + speaker + send
+        c_text, c_mic, c_spk, c_send = st.columns([9, 1.2, 1, 1], vertical_alignment="center")
+        c_text.text_input("Message", key="buddy_input", label_visibility="collapsed",
+                          placeholder="Message your gym buddy...", on_change=_on_send)
         with c_mic:
-            spoken = speech_to_text(language="en", start_prompt="🎤 Talk", stop_prompt="⏹ Stop",
+            spoken = speech_to_text(language="en", start_prompt="🎤", stop_prompt="⏹",
                                     just_once=True, use_container_width=True, key="buddy_voice")
-        speak_on = c_spk.toggle("🔊", key="buddy_speak", help="Read the buddy's replies aloud")
-        send_clicked = c_send.button("Send ➤", use_container_width=True)
+        c_spk.button("🔊" if speak_on else "🔇", key="buddy_spk_on" if speak_on else "buddy_spk_off",
+                     on_click=_toggle_speak, help="Speaker: read the buddy's replies aloud")
+        c_send.button("➤", key="buddy_send", on_click=_on_send, help="Send")
 
     if spoken:
         _send_to_buddy(spoken)
-    elif send_clicked and user_msg:
-        _send_to_buddy(user_msg)
 
     with chat_area:
         if not st.session_state.chat_history:

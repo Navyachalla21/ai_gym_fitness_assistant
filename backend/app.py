@@ -111,3 +111,6 @@ def recommend(req: RecommendRequest):
     }
 from profile_routes import router as profile_router
 app.include_router(profile_router)
+
+from admin_routes import router as admin_router
+app.include_router(admin_router)

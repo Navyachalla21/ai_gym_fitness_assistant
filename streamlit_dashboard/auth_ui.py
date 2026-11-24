@@ -56,6 +56,7 @@ def _login_background(card: bool = True) -> str:
     border:1px solid rgba(255,255,255,.18); border-radius:22px; padding:26px 28px !important;
     box-shadow:0 20px 60px rgba(0,0,0,.55); }
 """ if card else ""
+    tag = '<div class="tag">Train smart. <b>Stay consistent.</b></div>' if card else ""
     return f"""
 <style>
 .stApp {{ background:#050a16 !important; }}
@@ -97,7 +98,7 @@ header[data-testid="stHeader"] {{ background:transparent !important; }}
 </style>
 <div class="login-bg">{clip}<div class="orb o1"></div><div class="orb o2"></div>
 <div class="ecg e1"></div><div class="ecg e2"></div>
-<div class="tag">Train smart. <b>Stay consistent.</b></div></div>
+{tag}</div>
 """
 
 
@@ -130,21 +131,35 @@ def _detail(res) -> str:
         return res.text
 
 
-def _sign_in(path: str, payload: dict):
+def _sign_in(path: str, payload: dict, admin_only: bool = False):
     try:
         res = requests.post(f"{API_URL}{path}", json=payload, timeout=TIMEOUT)
     except Exception as exc:  # noqa: BLE001
         st.error(f"Could not reach the server: {exc}")
         return
-    if res.status_code == 200:
-        data = res.json()
-        st.session_state["token"] = data["token"]
-        st.session_state["user"] = data["user"]
-        st.session_state["view"] = "dashboard"
-        st.session_state.pop("guest", None)
-        st.rerun()
-    else:
+    if res.status_code != 200:
         st.error(_detail(res))
+        return
+    data = res.json()
+    st.session_state["token"] = data["token"]
+    st.session_state["user"] = data["user"]
+    st.session_state.pop("guest", None)
+    st.session_state.pop("is_admin", None)
+    if admin_only:
+        try:
+            ok = bool(requests.get(f"{API_URL}/api/admin/me", timeout=TIMEOUT).json().get("is_admin"))
+        except Exception:  # noqa: BLE001
+            ok = False
+        if not ok:
+            for k in ("token", "user"):
+                st.session_state.pop(k, None)
+            st.error("This account is not an admin account.")
+            return
+        st.session_state["is_admin"] = True
+        st.session_state["view"] = "admin"
+    else:
+        st.session_state["view"] = "dashboard"
+    st.rerun()
 
 
 def _landing():
@@ -162,6 +177,10 @@ def _landing():
         st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "register"; st.rerun()
     if c2.button("Log in", use_container_width=True, key="lp_login"):
         st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "login"; st.rerun()
+
+    _a, c5, _b = st.columns([1.2, 2.8, 1.2])
+    if c5.button("🛠️ Admin login", use_container_width=True, key="lp_admin"):
+        st.session_state["auth_page"] = "auth"; st.session_state["auth_mode"] = "admin"; st.rerun()
 
     st.markdown(
         "<div class='lp-h2'>Why fitness and diet go together</div>"
@@ -227,10 +246,12 @@ def require_login():
         st.markdown("<div class='login-title'>🏋️ AI Gym &amp; Fitness Assistant</div>"
                     "<div class='login-sub'>Log in to keep your own history. Your data stays private to your account.</div>",
                     unsafe_allow_html=True)
-        if st.session_state.get("auth_mode") == "register":
-            register_tab, login_tab = st.tabs(["Create account", "Log in"])
-        else:
-            login_tab, register_tab = st.tabs(["Log in", "Create account"])
+        _mode = st.session_state.get("auth_mode", "login")
+        _order = {"register": ["Create account", "Log in", "🛠️ Admin login"],
+                  "admin": ["🛠️ Admin login", "Log in", "Create account"]}.get(
+                      _mode, ["Log in", "Create account", "🛠️ Admin login"])
+        _tabs = dict(zip(_order, st.tabs(_order)))
+        login_tab, register_tab, admin_tab = _tabs["Log in"], _tabs["Create account"], _tabs["🛠️ Admin login"]
         with login_tab:
             with st.form("login_form"):
                 u = st.text_input("Username")
@@ -250,6 +271,13 @@ def require_login():
                         st.error("Weak password. It needs:\n\n" + "\n".join(f"- ❌ {x}" for x in problems))
                     else:
                         _sign_in("/auth/register", {"username": u2, "password": p2, "display_name": name})
+        with admin_tab:
+            st.caption("For administrators only. Shows every user's performance.")
+            with st.form("admin_form"):
+                au = st.text_input("Admin username")
+                ap = st.text_input("Admin password", type="password")
+                if st.form_submit_button("Admin log in", use_container_width=True):
+                    _sign_in("/auth/login", {"username": au, "password": ap}, admin_only=True)
         if st.button("Continue as guest", use_container_width=True):
             st.session_state["guest"] = True
             st.session_state["view"] = "dashboard"
