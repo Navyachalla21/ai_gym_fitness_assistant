@@ -162,6 +162,21 @@ def _sign_in(path: str, payload: dict, admin_only: bool = False):
     st.rerun()
 
 
+def _admin_sign_in(username: str, password: str):
+    try:
+        res = requests.post(f"{API_URL}/api/admin/login", json={"username": username, "password": password}, timeout=TIMEOUT)
+    except Exception as exc:  # noqa: BLE001
+        st.error(f"Could not reach the server: {exc}")
+        return
+    if res.status_code != 200:
+        st.error(_detail(res))
+        return
+    data = res.json()
+    st.session_state.pop("guest", None)
+    st.session_state.update({"token": data["token"], "user": data["user"], "is_admin": True, "view": "admin"})
+    st.rerun()
+
+
 def _landing():
     """First page for visitors: what the app is, what it offers, and a Get started button."""
     from sidebar_ui import apply_readable_css
@@ -229,6 +244,8 @@ def require_login():
 
     if st.session_state.get("token"):
         render_sidebar(guest=False)
+        if st.session_state.get("is_admin"):
+            return              # the admin has no profile; the app shows the admin page
         from profile_ui import profile_gate
         profile_gate()          # asks new users for their basic details; shows the profile page
         return
@@ -277,7 +294,7 @@ def require_login():
                 au = st.text_input("Admin username")
                 ap = st.text_input("Admin password", type="password")
                 if st.form_submit_button("Admin log in", use_container_width=True):
-                    _sign_in("/auth/login", {"username": au, "password": ap}, admin_only=True)
+                    _admin_sign_in(au, ap)
         if st.button("Continue as guest", use_container_width=True):
             st.session_state["guest"] = True
             st.session_state["view"] = "dashboard"

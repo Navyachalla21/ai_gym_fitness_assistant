@@ -1,19 +1,22 @@
-"""Admin-only routes: see every user's performance.
+"""Admin-only routes: see every user's performance and delete user data.
 
-THE ADMIN LOGIN IS HERE: change ADMIN_USERNAME and ADMIN_PASSWORD below to hand the admin
-access to someone else. (On Render you can instead set the same names as environment variables.)
-There is no 'create admin account': this one login is the only admin.
+THE ADMIN LOGIN IS IN A FILE: create  admin_credentials.txt  in the project root folder with two lines
+    username=your_admin_name
+    password=your_admin_password
+That file is listed in .gitignore, so it is never pushed to GitHub. On Render (where the file does not
+exist) set the same two values as environment variables ADMIN_USERNAME and ADMIN_PASSWORD.
 """
 import hmac
 import os
 import sys
+import time
 from contextlib import closing
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "navya_admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Change@Me123")
 _ADMIN_SUBJECT = "@@admin@@"          # token owner; cannot clash with a normal username
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,9 +24,26 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
 from ai_modules import auth, storage  # noqa: E402
-from auth_routes import current_user  # noqa: E402
 
 router = APIRouter(tags=["Admin"])
+_bearer = HTTPBearer(auto_error=False)
+
+
+def _credentials():
+    """(username, password) from admin_credentials.txt in the project root, else from environment variables."""
+    user = pw = None
+    path = os.path.join(_ROOT, "admin_credentials.txt")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                key, sep, val = line.strip().partition("=")
+                if sep and key.strip().lower() == "username":
+                    user = val.strip()
+                elif sep and key.strip().lower() == "password":
+                    pw = val.strip()
+    except OSError:
+        pass
+    return user or os.getenv("ADMIN_USERNAME"), pw or os.getenv("ADMIN_PASSWORD")
 
 
 class AdminLogin(BaseModel):
@@ -33,18 +53,35 @@ class AdminLogin(BaseModel):
 
 @router.post("/api/admin/login")
 def admin_login(req: AdminLogin):
-    ok_user = hmac.compare_digest(req.username.encode(), ADMIN_USERNAME.encode())
-    ok_pass = hmac.compare_digest(req.password.encode(), ADMIN_PASSWORD.encode())
+    admin_name, admin_pw = _credentials()
+    if not admin_name or not admin_pw:
+        raise HTTPException(status_code=503, detail="Admin login is not set up. Create admin_credentials.txt.")
+    ok_user = hmac.compare_digest(req.username.encode(), admin_name.encode())
+    ok_pass = hmac.compare_digest(req.password.encode(), admin_pw.encode())
     if not (ok_user and ok_pass):
         raise HTTPException(status_code=401, detail="Wrong admin username or password.")
-    return {"token": auth.make_token(_ADMIN_SUBJECT),
-            "user": {"username": ADMIN_USERNAME, "display_name": "Administrator"}}
+    token = jwt.encode({"sub": _ADMIN_SUBJECT, "exp": int(time.time()) + 12 * 3600},
+                       _secret(admin_name, admin_pw), algorithm="HS256")
+    return {"token": token,
+            "user": {"username": admin_name, "display_name": "Administrator"}}
 
 
-def admin_user(me: str = Depends(current_user)) -> str:
-    if me != _ADMIN_SUBJECT:
+def _secret(name: str, pw: str) -> str:
+    return f"{os.getenv('JWT_SECRET', 'dev-secret')}|{name}|{pw}"
+
+
+def admin_user(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> str:
+    """Admin only. The admin token is separate from normal user tokens."""
+    if creds is None:
+        raise HTTPException(status_code=401, detail="Please log in as admin.")
+    name, pw = _credentials()
+    try:
+        data = jwt.decode(creds.credentials, _secret(name or "", pw or ""), algorithms=["HS256"])
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=401, detail="Your admin session expired. Please log in again.") from None
+    if data.get("sub") != _ADMIN_SUBJECT:
         raise HTTPException(status_code=403, detail="Admins only.")
-    return me
+    return _ADMIN_SUBJECT
 
 
 def _rows(conn, sql, args=()):
@@ -55,8 +92,8 @@ def _rows(conn, sql, args=()):
 
 
 @router.get("/api/admin/me")
-def admin_me(me: str = Depends(current_user)):
-    return {"is_admin": me == _ADMIN_SUBJECT}
+def admin_me(_: str = Depends(admin_user)):
+    return {"is_admin": True}
 
 
 @router.get("/api/admin/users")
